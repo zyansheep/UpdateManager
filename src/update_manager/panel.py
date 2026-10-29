@@ -127,6 +127,7 @@ class Panel(Adw.Application):
         self.pending = {}  # button key -> deadline, for the confirm-once buttons
         self.busy_keys = set()  # actions sent, waiting for an answer
         self.tick_source = None
+        self.job_states = None  # job id -> state, to say when a job started from anywhere ends
         self.connect('startup', self.startup)
         self.connect('activate', lambda *_: self.toggle())
 
@@ -311,7 +312,22 @@ class Panel(Adw.Application):
             self.problem.set_text(f'Could not read the state: {e}')
             self.problem.set_visible(True)
             return
+        self.announce_jobs()
         self.render()
+
+    def announce_jobs(self):
+        """A toast when a job (here or on another machine) ends: the panel only said it started."""
+        states = {(name, j['id']): (j.get('state'), j) for name, host in ((self.state or {}).get('hosts') or {}).items()
+                  for j in host.get('jobs') or [] if j.get('id')}
+        if self.job_states is not None:
+            for key, (state, job) in states.items():
+                before = self.job_states.get(key)
+                if state in ('done', 'failed') and before not in (None, 'done', 'failed'):
+                    words = f"{key[0]}: {job.get('title')}: {job.get('message') or state}"
+                    toast = Adw.Toast.new(words if state == 'done' else f'Failed: {words}')
+                    toast.set_timeout(8)
+                    self.toasts.add_toast(toast)
+        self.job_states = {key: state for key, (state, _job) in states.items()}
 
     # --- actions ----------------------------------------------------------------------
     def action_button(self, words, host, action, args=None, confirm=None, suggested=False, sensitive=True,

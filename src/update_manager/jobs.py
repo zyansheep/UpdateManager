@@ -303,8 +303,8 @@ def merge_forks(old, new):
     for item in new.get('items', []):
         items[item['name']] = item
     order = [f['name'] for f in config.get('forks') or []]
-    return {'checked': new.get('checked'), 'items': sorted(items.values(), key=lambda i: order.index(i['name'])
-                                                           if i['name'] in order else 99)}
+    ordered = sorted(items.values(), key=lambda i: order.index(i['name']) if i['name'] in order else 99)
+    return {'checked': new.get('checked') or (old or {}).get('checked'), 'items': ordered}
 
 
 def refresh_fork(fork):

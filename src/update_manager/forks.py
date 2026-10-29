@@ -272,6 +272,9 @@ def brief(fork, state, host=None):
     host = host or config.hostname()
     repo = fork['repo']
     branch = state.get('branch') or fork.get('branch')
+    detached = branch == 'HEAD'
+    if detached:  # a submodule's checkout: there is no branch to protect, only the commit
+        branch = f"{state.get('head')} (the checked-out commit; a detached HEAD, e.g. a submodule)"
     lines = [
         f"# Bring {fork['name']} up to date with its upstream",
         '',
@@ -298,9 +301,9 @@ def brief(fork, state, host=None):
             "fork's version instead of taking either side.",
         ]
     lines += [
-        "Then run the project's tests and build, and fix what breaks. Do not push and do not touch the "
-        f"`{branch}` branch itself: leave the result on the new branch and report what you changed, what you "
-        "were unsure about, and what to check before merging it.",
+        "Then run the project's tests and build, and fix what breaks. Do not push"
+        + ('' if detached else f" and do not touch the `{branch}` branch itself") + ": leave the result on the new "
+        "branch and report what you changed, what you were unsure about, and what to check before merging it.",
         '',
         f"## Conflicting files ({state.get('conflict_count', len(state.get('conflicts') or []))})",
         '',
@@ -309,7 +312,8 @@ def brief(fork, state, host=None):
     if state.get('upstream_log'):
         lines += ['', '## Newest upstream commits', '', *[f'- {c}' for c in state['upstream_log']]]
     lines += ['', '_Written by update-manager._']
-    return '\n'.join(line for line in lines if line is not None)
+    text = '\n'.join(line for line in lines if line is not None)
+    return re.sub(r'\n{3,}', '\n\n', text)
 
 
 def patch_check(patch, settings=None, timeout=240):
