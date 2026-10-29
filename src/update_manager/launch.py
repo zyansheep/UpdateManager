@@ -83,6 +83,11 @@ def activate(action, parameter):
 
 def main(argv):
     if argv[:1] == ['serve']:
+        # GTK's Vulkan renderer probes for GPUs first; from a user unit without the session's driver
+        # environment it finds none, logs "Failed to detect any valid GPUs" and falls back. GL works
+        # everywhere and draws this panel just as fast. Either variable set in the environment still wins.
+        os.environ.setdefault('GSK_RENDERER', 'gl')  # GTK 4.22 renamed 'ngl' to 'gl'
+        os.environ.setdefault('GDK_DISABLE', 'vulkan')  # GDK probes Vulkan whatever the renderer
         preload(['panel', *argv])
         from . import panel
         return panel.main(argv)

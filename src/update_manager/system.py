@@ -241,13 +241,21 @@ def update_section(host, system, ci_state, settings=None, previous=None, have_lo
         return out
     # Not every other system is older than CI's: a machine may run a local build (rebuilt from a
     # checkout with changes CI hasn't seen) or a newer commit. Only an older one is an update.
-    target_rev = (target.get('rev') or '')[:12]
-    if not rev or rev.endswith('-dirty'):
-        out['state'] = 'local'
-    elif out['commits'] == [] and rev[:12] != target_rev:
-        out['state'] = 'ahead'
+    # Only a system whose commit CI's build descends from is behind. Uncommitted changes, a commit
+    # CI's doesn't contain, or a commit nobody here knows: a local build, and switching to CI's
+    # build would throw its changes away.
+    if not rev:
+        out['state'], out['local_reason'] = 'local', 'unknown-commit'
+    elif rev.endswith('-dirty'):
+        out['state'], out['local_reason'] = 'local', 'uncommitted'
     else:
-        out['state'] = 'available'
+        relation = ancestry(rev, target.get('rev'), settings)
+        if relation == 'behind':
+            out['state'] = 'available'
+        elif relation in ('ahead', 'same'):
+            out['state'] = 'ahead'  # 'same': the same commit, built differently (locally)
+        else:
+            out['state'], out['local_reason'] = 'local', relation or 'unknown-commit'
     # The diff and download estimate only change when one of the two systems does.
     key = f"{current}->{target['path']}"
     if previous and previous.get('key') == key and previous.get('diff') is not None:
@@ -290,11 +298,7 @@ def commits_between(old, new, settings=None, limit=30):
         return None
     if old[:12] == new[:12]:
         return []
-    for repo, extra in ((config.flake_dir(settings), []),
-                        (Path(config.get('nixos_ci', 'state', settings=settings)) / 'checkout-main',
-                         ['-c', 'safe.directory=*'])):
-        if not (Path(repo) / '.git').exists():
-            continue
+    for repo, extra in _repos(settings):
         try:
             text = run(['git', *extra, '-C', repo, 'log', f'--max-count={limit}', '--format=%H%x09%ct%x09%s',
                         f'{old}..{new}'], timeout=15)
@@ -306,6 +310,39 @@ def commits_between(old, new, settings=None, limit=30):
             out.append({'rev': rev[:12], 'time': float(when or 0), 'subject': subject})
         return out
     return None
+
+
+def ancestry(old, new, settings=None):
+    """How commit old relates to new: 'behind' (new descends from old), 'ahead' (old descends from
+    new), 'same', 'diverged', or None when no repository here knows both."""
+    if not old or not new:
+        return None
+    if old[:12] == new[:12]:
+        return 'same'
+    def is_ancestor(repo, extra, a, b):
+        done = run(['git', *extra, '-C', repo, 'merge-base', '--is-ancestor', a, b], timeout=15, check=False)
+        return {0: True, 1: False}.get(done.returncode)  # 128: a commit it doesn't have
+
+    for repo, extra in _repos(settings):
+        try:
+            forward = is_ancestor(repo, extra, old, new)
+            if forward is None:
+                continue
+            if forward:
+                return 'behind'
+            return 'ahead' if is_ancestor(repo, extra, new, old) else 'diverged'
+        except CommandError:
+            continue
+    return None
+
+
+def _repos(settings=None):
+    """Where to look commits up: the checkout, then nixos-ci's clone (another user's: safe.directory)."""
+    for repo, extra in ((config.flake_dir(settings), []),
+                        (Path(config.get('nixos_ci', 'state', settings=settings)) / 'checkout-main',
+                         ['-c', 'safe.directory=*'])):
+        if (Path(repo) / '.git').exists():
+            yield repo, extra
 
 
 def checkout(settings=None):

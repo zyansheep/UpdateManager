@@ -24,10 +24,11 @@ def host_headline(name, host, now=None):
         if (host.get('system') or {}).get('reboot_pending'):
             return 'Up to date · reboot pending', 'reboot'
         return 'Up to date', 'current'
+    target = (update.get('target_rev') or '?')[:8]
     if state == 'local':
-        return 'Running a local build', 'unknown'
+        return f'Local build · CI has {target}', 'unknown'
     if state == 'ahead':
-        return 'Ahead of CI', 'unknown'
+        return f'Ahead of CI ({target})', 'unknown'
     if state == 'no-ci':
         return 'No CI build for it', 'unknown'
     return 'Unknown', 'unknown'

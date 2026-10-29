@@ -12,10 +12,14 @@ git -C ~/Projects/UpdateManager pull                 # origin is functor:Project
 git -C ~/Projects/UpdateManager log --oneline 4b53922e31a4..   # what changed (also in the final report)
 cd ~/nixos-conf && nix flake update update-manager   # the git+file input moves to the new HEAD
 nrb                                                  # or: sudo rebuild
-systemctl --user restart update-manager-agent update-manager-panel
 ```
 
-A switch doesn't restart user units, so restart the two by hand.
+From 9f7eaf52f048 on, the module restarts the agent and panel itself on a
+switch (`system.userActivationScripts`), when the package changed or the
+agent isn't running. switch-to-configuration starts no new user units and
+restarts no changed ones. The switch that brings this in still runs the old
+module, so restart them by hand once:
+`systemctl --user restart update-manager-agent update-manager-panel`.
 
 Without a rebuild (to try a commit quickly), run it from the checkout instead:
 
@@ -60,12 +64,11 @@ ssh -o BatchMode=yes functor '~/.nix-profile/bin/update-manager --version'   # w
    journalctl -u "$unit" -n 30; cat /run/update-manager/*.result.json
    ```
 
-5. **Switch / Boot** in the panel: only once origin/main includes the
-   update-manager integration. nixos-ci builds origin/main, and today that has
-   no update-manager. Switching isomorph to it would remove the widget from
-   isomorph (Rebuild brings it back). Until then the card says *Running a
-   local build* (after the pull in step 1), and Switch is there but not
-   highlighted.
+5. **Switch / Boot** in the panel: these appear only when CI's build descends
+   from the commit isomorph runs. Today isomorph runs a build from an
+   uncommitted tree that CI's origin/main lacks. The card says *Local build ·
+   CI has 61b4c721* and offers only Rebuild: switching would drop the local
+   changes, the widget included.
 6. **functor's buttons from isomorph**:
    - Build now / Build with updated inputs start nixos-ci on functor.
    - Rebuild on functor's card runs `sudo rebuild` there, which deploys

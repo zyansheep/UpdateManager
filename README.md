@@ -63,8 +63,12 @@ root: update-manager-switch@<system>.service / -boot@  (polkit: the listed users
 - its nixos-conf checkout (ahead, behind, uncommitted);
 - the last job.
 
-A machine on a build nixos-ci didn't make (rebuilt from a checkout) shows as a
-*local build*, not as behind.
+Only a machine whose commit CI's build descends from is *behind*. A system
+from an uncommitted tree, a commit CI's build doesn't contain, or an unknown
+commit is a *local build*; a newer commit is *ahead of CI*. Neither gets a
+Switch button, since switching to CI's build would drop its changes.
+`system.configurationRevision` (`self.rev or self.dirtyRev`) lets the agent
+tell these apart for systems nixos-ci didn't build.
 
 **nixos-ci** (functor): the last result per host, the next poll, a typical run
 time from the journal, recent runs, flake input ages (↑: the input's branch has
@@ -143,7 +147,12 @@ services.update-manager = {
 
 The module installs the package and the user units `update-manager-agent`
 (`default.target`) and `update-manager-panel` (`graphical-session.target`,
-`Type=dbus`). It also adds the root template units and the polkit rule. The
+`Type=dbus`). It also adds the root template units and the polkit rule.
+switch-to-configuration starts no new user units and restarts no changed ones,
+so a user activation script restarts both units whenever the package changed
+(or the agent isn't running). The panel uses GTK's GL renderer
+(`GSK_RENDERER=gl`, `GDK_DISABLE=vulkan`; your own values win). From a user
+unit, GTK's Vulkan probe finds no GPU and only logs about it. The
 Waybar snippet and its CSS are in [contrib/waybar](contrib/waybar).
 `contrib/waybar/updates.sh` finds `update-manager` in the system or the user
 profile.

@@ -61,6 +61,8 @@
           agent = c.systemd.user.services.update-manager-agent.wantedBy;
           panel = c.systemd.user.services.update-manager-panel.serviceConfig.BusName;
           polkit = c.security.polkit.extraConfig;
+          # userActivationScripts come out merged into one script.
+          userActivation = nixpkgs.lib.hasInfix "update-manager/package" c.system.userActivationScripts.script;
         });
     });
 

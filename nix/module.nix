@@ -133,6 +133,24 @@ in {
       };
     };
 
+    # switch-to-configuration starts no new user units and restarts no changed ones: on the first
+    # switch the widget would stay stale until the next login, and after an upgrade the old agent
+    # and panel would keep running. Each user manager runs this on every switch
+    # (nixos-activation.service); it acts only when the package changed or the agent isn't running.
+    system.userActivationScripts.update-manager = let
+      systemctl = "${pkgs.systemd}/bin/systemctl";
+    in ''
+      stamp="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/update-manager/package"
+      if [ "$(cat "$stamp" 2>/dev/null)" != "${cfg.package}" ] ${lib.optionalString cfg.agent.enable
+        "|| ! ${systemctl} --user --quiet is-active update-manager-agent.service"}; then
+        ${lib.optionalString cfg.agent.enable "${systemctl} --user restart --no-block update-manager-agent.service || true"}
+        if ${systemctl} --user --quiet is-active graphical-session.target; then
+          ${systemctl} --user restart --no-block update-manager-panel.service || true
+        fi
+        mkdir -p "$(dirname "$stamp")" && echo "${cfg.package}" >"$stamp"
+      fi
+    '';
+
     security.polkit.extraConfig = lib.mkIf (cfg.users != []) ''
       // update-manager: the listed users may start (and stop) the switch units.
       polkit.addRule(function(action, subject) {

@@ -86,3 +86,54 @@ class SystemTest(unittest.TestCase):
                                       ci_state, settings={'flake': '/nonexistent', 'nixos_ci': {'state': '/x'}},
                                       heavy=False)
         self.assertEqual(dirty['state'], 'local')
+
+
+class AncestryTest(unittest.TestCase):
+    """Only a system whose commit CI's build descends from is behind."""
+
+    def setUp(self):
+        import os
+        import subprocess
+        os.environ.update(GIT_AUTHOR_NAME='t', GIT_AUTHOR_EMAIL='t@t', GIT_COMMITTER_NAME='t',
+                          GIT_COMMITTER_EMAIL='t@t', GIT_CONFIG_NOSYSTEM='1')
+        self.repo = Path(tempfile.mkdtemp())
+
+        def git(*args):
+            return subprocess.run(['git', '-C', str(self.repo), *args], check=True, capture_output=True,
+                                  text=True).stdout.strip()
+        git('init', '-q', '-b', 'main')
+        revs = {}
+        for name in ('a', 'b'):
+            (self.repo / name).write_text(name)
+            git('add', name)
+            git('commit', '-qm', name)
+            revs[name] = git('rev-parse', 'HEAD')
+        git('checkout', '-qb', 'local', revs['a'])
+        (self.repo / 'c').write_text('c')
+        git('add', 'c')
+        git('commit', '-qm', 'c')
+        revs['c'] = git('rev-parse', 'HEAD')  # a -> c, beside a -> b
+        git('checkout', '-qb', 'newer', revs['b'])
+        (self.repo / 'd').write_text('d')
+        git('add', 'd')
+        git('commit', '-qm', 'd')
+        revs['d'] = git('rev-parse', 'HEAD')  # a -> b -> d
+        self.revs = revs
+        self.settings = {'flake': str(self.repo), 'nixos_ci': {'state': '/nonexistent'}}
+        self.ci_state = {'main': {'rev': revs['b'], 'built': 1, 'hosts': {'laptop': {
+            'ok': True, 'path': '/nix/store/' + 'b' * 32 + '-nixos-system-laptop-1'}}}}
+
+    def state(self, rev):
+        update = system.update_section('laptop', {'current': '/nix/store/' + 'x' * 32 + '-nixos-system-laptop-0',
+                                                  'rev': rev}, self.ci_state, self.settings, heavy=False)
+        return update['state'], update.get('local_reason'), update.get('behind')
+
+    def test_states(self):
+        r = self.revs
+        self.assertEqual(self.state(r['a']), ('available', None, 1))
+        self.assertEqual(self.state(r['d']), ('ahead', None, 0))
+        self.assertEqual(self.state(r['c'])[:2], ('local', 'diverged'))
+        self.assertEqual(self.state(r['b'])[:2], ('ahead', None))  # same commit, a different (local) build
+        self.assertEqual(self.state(r['a'][:12] + '-dirty')[:2], ('local', 'uncommitted'))
+        self.assertEqual(self.state('f' * 40)[:2], ('local', 'unknown-commit'))
+        self.assertEqual(self.state(None)[:2], ('local', 'unknown-commit'))

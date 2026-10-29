@@ -450,7 +450,8 @@ class Panel(Adw.Application):
             return card
         sysinfo = host.get('system') or {}
         update = host.get('update') or {}
-        line = f"Running <span font_family='monospace'>{esc(sysinfo.get('rev') or '?')}</span>"
+        line = (f"Running <span font_family='monospace'>{esc(sysinfo['rev'])}</span>" if sysinfo.get('rev')
+                else 'Running a system of unknown commit')
         if sysinfo.get('generation'):
             line += f" · generation {sysinfo['generation']}"
         if sysinfo.get('switched'):
@@ -462,17 +463,19 @@ class Panel(Adw.Application):
         card.append(label(line, 'small', markup=True, wrap=True))
         target = update.get('target') or {}
         if update.get('state') in ('local', 'ahead'):
-            why = ("isn't one nixos-ci built (rebuilt from a checkout?)" if update['state'] == 'local'
-                   else 'is from a newer commit than CI has built')
-            card.append(label(f"This system {why}. CI's newest build for it is "
-                              f"<span font_family='monospace'>{esc((target.get('rev') or '?')[:12])}</span>, built "
-                              f"{esc(clock_text(target.get('built'), now))}; Switch goes to that.", ['small', 'muted'],
-                              markup=True, wrap=True))
-        if update.get('state') in ('available', 'local', 'ahead'):
-            if update.get('state') == 'available':
-                card.append(label(f"CI build <span font_family='monospace'>{esc((target.get('rev') or '?')[:12])}"
-                                  f"</span> ready, built {esc(clock_text(target.get('built'), now))}", 'small',
-                                  markup=True))
+            why = {'uncommitted': 'was built from a checkout with uncommitted changes',
+                   'diverged': "is from a commit CI's build doesn't contain",
+                   'unknown-commit': "wasn't built by nixos-ci, and its commit isn't known here"}.get(
+                update.get('local_reason'), 'is from a newer commit than CI has built')
+            card.append(label(f"This system {why}. CI's newest build is "
+                              f"<span font_family='monospace'>{esc((target.get('rev') or '?')[:12])}</span> "
+                              f"({esc(clock_text(target.get('built'), now))}); switching to it would drop this "
+                              "system's changes, so there's no Switch here. Rebuild builds from the checkout.",
+                              ['small', 'muted'], markup=True, wrap=True))
+        if update.get('state') == 'available':
+            card.append(label(f"CI build <span font_family='monospace'>{esc((target.get('rev') or '?')[:12])}"
+                              f"</span> ready, built {esc(clock_text(target.get('built'), now))}", 'small',
+                              markup=True))
             commits = update.get('commits') or []
             if commits:
                 lines = box(spacing=1, margin_start=6)
@@ -484,7 +487,7 @@ class Panel(Adw.Application):
                 if len(commits) > 6:
                     lines.append(label(f'and {len(commits) - 6} more', ['muted', 'small']))
                 card.append(lines)
-            elif update.get('behind') is None and update.get('state') == 'available':
+            elif update.get('behind') is None:
                 card.append(label("The commits in between aren't known (its system wasn't built by nixos-ci).",
                                   ['muted', 'small'], wrap=True))
             card.append(self.diff_widget(update))
@@ -495,7 +498,7 @@ class Panel(Adw.Application):
             if update.get('error'):
                 card.append(label(update['error'], 'problem', wrap=True))
         card.append(self.host_actions(name, host, state))
-        switchable = update.get('state') in ('available', 'local', 'ahead')
+        switchable = update.get('state') == 'available'
         if switchable and not (host.get('capabilities') or {}).get('switch_units'):
             card.append(label('Switch and Boot need the root units (services.update-manager deployed here); '
                               'Rebuild works without them.', ['muted', 'small'], wrap=True))
@@ -543,20 +546,23 @@ class Panel(Adw.Application):
         update = host.get('update') or {}
         caps = host.get('capabilities') or {}
         target = (update.get('target') or {}).get('path')
-        available = update.get('state') in ('available', 'local', 'ahead') and target
-        units_hint = None if caps.get('switch_units') else (
-            'Needs the update-manager root units here (services.update-manager). '
-            'Until then, "Pull & rebuild" works (it uses the passwordless `sudo rebuild`).')
-        reboot_after = bool((update.get('diff') or {}).get('kernel'))
-        row.append(self.action_button('Switch', name, 'switch', {'path': target}, confirm='Switch now?',
-                                      suggested=not reboot_after and update.get('state') == 'available',
-                                      sensitive=bool(available and caps.get('switch_units')),
-                                      hint=units_hint or "Switch to nixos-ci's build: downloads it from functor's "
-                                                         "cache and activates it"))
-        row.append(self.action_button('Boot', name, 'boot', {'path': target}, confirm='Boot into it next time?',
-                                      suggested=reboot_after, sensitive=bool(available and caps.get('switch_units')),
-                                      hint=units_hint or 'Make it the default boot entry without switching now '
-                                                         '(for a new kernel)'))
+        # A local build or one ahead of CI gets no Switch: going to CI's build would drop its changes.
+        if update.get('state') not in ('local', 'ahead'):
+            available = bool(update.get('state') == 'available' and target)
+            units_hint = None if caps.get('switch_units') else (
+                'Needs the update-manager root units here (services.update-manager). '
+                'Until then, "Pull & rebuild" works (it uses the passwordless `sudo rebuild`).')
+            reboot_after = bool((update.get('diff') or {}).get('kernel'))
+            row.append(self.action_button('Switch', name, 'switch', {'path': target}, confirm='Switch now?',
+                                          suggested=available and not reboot_after,
+                                          sensitive=available and bool(caps.get('switch_units')),
+                                          hint=units_hint or "Switch to nixos-ci's build: downloads it from "
+                                                             "functor's cache and activates it"))
+            row.append(self.action_button('Boot', name, 'boot', {'path': target}, confirm='Boot into it next time?',
+                                          suggested=available and reboot_after,
+                                          sensitive=available and bool(caps.get('switch_units')),
+                                          hint=units_hint or 'Make it the default boot entry without switching '
+                                                             'now (for a new kernel)'))
         checkout = host.get('checkout') or {}
         pull = bool(checkout.get('behind'))
         row.append(self.action_button('Pull & rebuild' if pull else 'Rebuild', name, 'rebuild', {'pull': pull},
