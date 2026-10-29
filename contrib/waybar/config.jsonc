@@ -1,0 +1,17 @@
+// update-manager's Waybar module. Add "custom/updates" to a module list, e.g.
+// right after "custom/services". With update-manager-agent.service running, the
+// module only reads the state it publishes, so it starts instantly.
+{
+  // Check: every machine current. Rotate N: N machines have a newer CI build.
+  // Hammer N%: nixos-ci is building. Download N%: a switch, rebuild or upgrade
+  // is running. Triangle: a job failed in the last hour.
+  // Classes: current, updates, building, switching, failed, reboot (a machine
+  // runs a kernel it hasn't booted), profiles, forks, stale (agent not running), unknown.
+  "custom/updates": {
+    "exec": "update-manager waybar",
+    "return-type": "json",
+    "restart-interval": 10,
+    "on-click": "update-manager panel",
+    "on-click-right": "update-manager panel upstream"
+  }
+}
