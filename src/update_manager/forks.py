@@ -144,7 +144,7 @@ def check(fork, do_fetch=True, now=None):
     try:
         branch, head = resolve_branch(repo, fork)
         out['branch'], out['head'] = branch, head[:12]
-        if do_fetch:
+        if do_fetch and fork.get('fetch', True):  # fetch = false: compare against what is fetched already
             try:
                 fetch(repo, fork)
                 out['fetched'] = now
