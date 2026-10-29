@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "update-manager"
+dynamic = ["version"]
+description = "Update status, CI builds and upstream merges across your NixOS machines, in a Waybar widget"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+panel = ["PyGObject>=3.50"]
+
+[project.scripts]
+update-manager = "update_manager.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "update_manager.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+update_manager = ["*.css"]
+
+[tool.ruff]
+line-length = 125
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM"]
+ignore = ["SIM105", "SIM108", "E731"]

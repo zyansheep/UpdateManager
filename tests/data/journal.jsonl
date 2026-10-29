@@ -1,0 +1,15 @@
+{"MESSAGE":"building 86698e101424: update flake","_SYSTEMD_UNIT":"nixos-ci-poll.service","__REALTIME_TIMESTAMP":"1793159101388686"}
+{"MESSAGE":"isomorph FAILED","_SYSTEMD_UNIT":"nixos-ci-poll.service","__REALTIME_TIMESTAMP":"1793159143744671"}
+{"MESSAGE":"functor ok /nix/store/af69w5bi4rsgbmxv3xchfnsxxhfa5x14-nixos-system-functor-26.11.20261010.6510408","_SYSTEMD_UNIT":"nixos-ci-poll.service","__REALTIME_TIMESTAMP":"1793159143818006"}
+{"MESSAGE":"building 10ca1067f840: functor: binary cache, CI and remote builder for isomorph","_SYSTEMD_UNIT":"nixos-ci-poll.service","__REALTIME_TIMESTAMP":"1793160900799068"}
+{"MESSAGE":"isomorph ok /nix/store/g9xqjqb64884x3llksfvvw317jdhc7sp-nixos-system-isomorph-26.11.20261010.6510408","_SYSTEMD_UNIT":"nixos-ci-poll.service","__REALTIME_TIMESTAMP":"1793160941440584"}
+{"MESSAGE":"functor ok /nix/store/8frxanfvcjlnnv9ax1cy9z562pqsslw0-nixos-system-functor-26.11.20261010.6510408","_SYSTEMD_UNIT":"nixos-ci-poll.service","__REALTIME_TIMESTAMP":"1793160941518476"}
+{"MESSAGE":"building 10ca1067f840: functor: binary cache, CI and remote builder for isomorph","_SYSTEMD_UNIT":"nixos-ci.service","__REALTIME_TIMESTAMP":"1793160941693485"}
+{"MESSAGE":"isomorph ok /nix/store/g9xqjqb64884x3llksfvvw317jdhc7sp-nixos-system-isomorph-26.11.20261010.6510408","_SYSTEMD_UNIT":"nixos-ci.service","__REALTIME_TIMESTAMP":"1793160980391440"}
+{"MESSAGE":"functor ok /nix/store/8frxanfvcjlnnv9ax1cy9z562pqsslw0-nixos-system-functor-26.11.20261010.6510408","_SYSTEMD_UNIT":"nixos-ci.service","__REALTIME_TIMESTAMP":"1793160980467324"}
+{"MESSAGE":"building 09ccec6f7e4a: rebuild: refuse to compile packages locally while functor is unreachable","_SYSTEMD_UNIT":"nixos-ci-poll.service","__REALTIME_TIMESTAMP":"1793163601025958"}
+{"MESSAGE":"isomorph ok /nix/store/ydz4725qcn6c6y194a2z04xwyfsp4mpr-nixos-system-isomorph-26.11.20261010.6510408","_SYSTEMD_UNIT":"nixos-ci-poll.service","__REALTIME_TIMESTAMP":"1793163720330889"}
+{"MESSAGE":"functor ok /nix/store/2ln9p1qx5qwzhydj8ni2smhf16cghyfc-nixos-system-functor-26.11.20261010.6510408","_SYSTEMD_UNIT":"nixos-ci-poll.service","__REALTIME_TIMESTAMP":"1793163720433034"}
+{"MESSAGE":"building 61b4c721496e: nm-sidebar: status-first layout; fixed-width Waybar rates","_SYSTEMD_UNIT":"nixos-ci-poll.service","__REALTIME_TIMESTAMP":"1793168101046817"}
+{"MESSAGE":"isomorph ok /nix/store/6q38xyrc67g4afpq5ic280c1f172dm4f-nixos-system-isomorph-26.11.20261010.6510408","_SYSTEMD_UNIT":"nixos-ci-poll.service","__REALTIME_TIMESTAMP":"1793168197762605"}
+{"MESSAGE":"functor ok /nix/store/2ln9p1qx5qwzhydj8ni2smhf16cghyfc-nixos-system-functor-26.11.20261010.6510408","_SYSTEMD_UNIT":"nixos-ci-poll.service","__REALTIME_TIMESTAMP":"1793168197916447"}

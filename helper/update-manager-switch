@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# update-manager-switch MODE NAME: make the NixOS system /nix/store/NAME this
+# machine's system, as root. MODE is `switch` (activate now) or `boot` (next boot).
+#
+# Run only by the update-manager-switch@NAME / update-manager-boot@NAME units
+# (nix/module.nix), which users in services.update-manager.users may start
+# through polkit. What it will do is fixed:
+#
+#   1. NAME must be <hash>-nixos-system-<this host's name>-<version>: nothing else.
+#   2. nix-store --realise it: from the binary caches (signatures checked as for
+#      any substitution), or it is already in the store.
+#   3. It must be a NixOS system (bin/switch-to-configuration).
+#   4. nix-env --profile /nix/var/nix/profiles/system --set it, and run its
+#      switch-to-configuration MODE in its own transient unit, as nixos-rebuild
+#      does, so a switch that restarts units can't stop itself.
+#
+# Progress (Nix's internal-json log through `update-manager nixlog`) goes to
+# /run/update-manager/<hash>.json, the outcome to <hash>.result.json, and the
+# download size and times to /var/lib/update-manager/history.json, which the
+# next estimate uses.
+set -euo pipefail
+
+mode=${1:-}
+name=${2:-}
+host=${UPDATE_MANAGER_HOST:-$(hostname)}
+run_dir=/run/update-manager
+state_dir=/var/lib/update-manager
+substituters=${UPDATE_MANAGER_SUBSTITUTERS:-}
+
+case $mode in
+  switch | boot) ;;
+  *)
+    echo "usage: update-manager-switch switch|boot NAME" >&2
+    exit 2
+    ;;
+esac
+if ! [[ $name =~ ^[0-9a-df-np-sv-z]{32}-nixos-system-${host}-[A-Za-z0-9._+-]+$ ]]; then
+  echo "refusing: '$name' is not a NixOS system for $host" >&2
+  exit 2
+fi
+
+path=/nix/store/$name
+hash=${name:0:32}
+mkdir -p "$run_dir" "$state_dir"
+chmod 0755 "$run_dir" "$state_dir"
+progress=$run_dir/$hash.json
+result=$run_dir/$hash.result.json
+rm -f "$progress" "$result"
+started=$(date +%s)
+from=$(readlink -f /run/current-system || true)
+
+finish() {
+  local ok=$1 message=$2 fetched=${3:-$started}
+  update-manager switch-record --result "$result" --history "$state_dir/history.json" \
+    --ok "$ok" --mode "$mode" --path "$path" --from "$from" --message "$message" \
+    --started "$started" --fetched "$fetched" --progress "$progress" || true
+}
+trap 'finish false "the switch failed (see journalctl -u update-manager-$mode@*)"' ERR
+
+args=(--realise "$path" --log-format internal-json)
+for s in $substituters; do
+  args+=(--option extra-substituters "$s")
+done
+echo "fetching $name"
+set +e
+nix-store "${args[@]}" 2>&1 >/dev/null | update-manager nixlog --progress "$progress" --history "$state_dir/build-times.json"
+fetch_status=${PIPESTATUS[0]}
+set -e
+fetched=$(date +%s)
+if [ "$fetch_status" -ne 0 ] || ! nix-store --check-validity "$path" 2>/dev/null; then
+  trap - ERR
+  finish false "could not fetch $name (exit $fetch_status)" "$fetched"
+  exit 1
+fi
+if [ ! -x "$path/bin/switch-to-configuration" ]; then
+  trap - ERR
+  finish false "$name has no bin/switch-to-configuration" "$fetched"
+  exit 1
+fi
+
+echo "setting the system profile to $name"
+nix-env --profile /nix/var/nix/profiles/system --set "$path"
+echo "running switch-to-configuration $mode"
+set +e
+systemd-run -E LOCALE_ARCHIVE -E NIXOS_INSTALL_BOOTLOADER --collect --no-ask-password --pipe --quiet \
+  --service-type=exec --unit=update-manager-switch-to-configuration \
+  "$path/bin/switch-to-configuration" "$mode"
+activate_status=$?
+set -e
+trap - ERR
+if [ "$activate_status" -ne 0 ]; then
+  finish false "switch-to-configuration $mode exited $activate_status" "$fetched"
+  exit 1
+fi
+if [ "$mode" = boot ]; then
+  finish true "$name is the default boot entry; reboot to use it" "$fetched"
+else
+  finish true "switched to $name" "$fetched"
+fi
