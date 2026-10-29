@@ -22,6 +22,7 @@ Actions (here, or on HOST: over ssh, or queued until HOST next checks in)
 
 Checks, printed (the agent runs them on its own schedule)
   check forks|patches|profiles|inputs|update
+  config [KEY...]            a setting as in effect (defaults, /etc, ~/.config)
   brief FORK                 the agent brief for a conflicting fork
 
 Plumbing
@@ -119,6 +120,12 @@ def main(argv=None):
         return 0
     if command == 'check':
         return check(rest)
+    if command == 'config':
+        value = config.get(*rest) if rest else config.load()
+        if value is None:
+            return 1
+        print(value if isinstance(value, str) else json.dumps(value, default=str))
+        return 0
     if command == 'switch-record':
         return switch_record(rest)
     if command == 'brief':

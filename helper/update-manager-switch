@@ -27,7 +27,9 @@ host=${UPDATE_MANAGER_HOST:-$(hostname)}
 run_dir=${UPDATE_MANAGER_SYSTEM_RUNTIME:-/run/update-manager}
 state_dir=${UPDATE_MANAGER_SYSTEM_STATE:-/var/lib/update-manager}
 profile=${UPDATE_MANAGER_SYSTEM_PROFILE:-/nix/var/nix/profiles/system}
-substituters=${UPDATE_MANAGER_SUBSTITUTERS:-}
+# The module's services.update-manager.substituters, else the configured cache_url
+# (functor's cache: CI builds are only there).
+substituters=${UPDATE_MANAGER_SUBSTITUTERS:-$(update-manager config cache_url 2>/dev/null || true)}
 
 case $mode in
   switch | boot) ;;

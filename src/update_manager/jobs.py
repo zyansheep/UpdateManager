@@ -154,6 +154,11 @@ def do_switch(job, args, log):
             job['progress'] = snap
             save(job)
     result = read_json(config.SYSTEM_RUNTIME / f'{store_hash(path)}.result.json') or {}
+    log.flush()
+    if proc.returncode != 0 and 'authentication required' in job_path(job['id']).with_suffix('.log').read_text(
+            errors='replace').lower():
+        raise ActionError(f'polkit refused to start {unit}: add {os.environ.get("USER", "this user")} to '
+                          'services.update-manager.users')
     if proc.returncode != 0 or not result.get('ok', proc.returncode == 0):
         tail = journal_tail(unit)
         log.write(tail.encode())
