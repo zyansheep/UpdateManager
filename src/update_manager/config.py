@@ -80,7 +80,7 @@ DEFAULTS = {
          'upstream': 'https://github.com/Relz/network-manager-sidebar', 'track': 'branch',
          'upstream_branch': 'main', 'strategy': 'merge', 'push': None, 'project': 'nm-sidebar (nixos-conf vendor)',
          'notes': 'A git submodule of nixos-conf: the fork zyansheep/network-manager-sidebar of '
-                  'Relz/network-manager-sidebar. After merging, commit the submodule bump in nixos-conf.'},
+                  'Relz/network-manager-sidebar. The user commits the submodule bump in nixos-conf themselves.'},
     ],
     # Packages nixos-conf patches: when upstream moves past `version`, the patches may need a rebase.
     'patches': [
