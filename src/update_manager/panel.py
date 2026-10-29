@@ -107,7 +107,10 @@ def esc(value):
 
 
 def pill(words, kind):
-    return label(words, ['pill', kind], valign=Gtk.Align.CENTER)
+    # Ellipsized: a label's full width is its minimum width otherwise, and a layer surface grows to fit it.
+    widget = label(words, ['pill', kind], valign=Gtk.Align.CENTER, ellipsize=True)
+    widget.set_max_width_chars(34)
+    return widget
 
 
 def clear(container):
@@ -484,7 +487,7 @@ class Panel(Adw.Application):
                 card.append(label(update['error'], 'problem', wrap=True))
         card.append(self.host_actions(name, host, state))
         if update.get('state') == 'available' and not (host.get('capabilities') or {}).get('switch_units'):
-            card.append(label('Switch and Boot need the root units from the nixos-conf update-manager branch; '
+            card.append(label('Switch and Boot need the root units (services.update-manager deployed here); '
                               'Rebuild works without them.', ['muted', 'small'], wrap=True))
         if host.get('queued'):
             for request in host['queued']:
@@ -518,7 +521,7 @@ class Panel(Adw.Application):
         for change in diff['changes'][:30]:
             row = box(False, 8)
             row.append(label(change['name'], 'mono', ellipsize=True, hexpand=True))
-            row.append(label(text.change_text(change), ['mono', 'muted']))
+            row.append(label(text.change_text(change), ['mono', 'muted'], ellipsize=True))
             rows.append(row)
         if diff['count'] > 30:
             rows.append(label(f"and {diff['count'] - 30} more", ['muted', 'small']))
@@ -532,7 +535,7 @@ class Panel(Adw.Application):
         target = (update.get('target') or {}).get('path')
         available = update.get('state') == 'available' and target
         units_hint = None if caps.get('switch_units') else (
-            'Needs the update-manager root units on this machine: deploy the nixos-conf update-manager branch. '
+            'Needs the update-manager root units here (services.update-manager). '
             'Until then, "Pull & rebuild" works (it uses the passwordless `sudo rebuild`).')
         reboot_after = bool((update.get('diff') or {}).get('kernel'))
         row.append(self.action_button('Switch', name, 'switch', {'path': target}, confirm='Switch now?',

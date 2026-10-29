@@ -10,7 +10,7 @@ def host_headline(name, host, now=None):
     now = now or time.time()
     for job in host.get('jobs') or []:
         if job.get('state') in ('running', 'queued') and job.get('kind') in ('switch', 'boot', 'rebuild'):
-            return f"{job.get('title')}…", 'busy'
+            return {'switch': 'Switching…', 'boot': 'Setting the boot entry…', 'rebuild': 'Rebuilding…'}[job['kind']], 'busy'
     if host.get('queued'):
         return f"{host['queued'][0]['action']} queued until it checks in", 'busy'
     if host.get('source') == 'none':
