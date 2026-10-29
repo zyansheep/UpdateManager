@@ -14,7 +14,7 @@ cd ~/nixos-conf && nix flake update update-manager   # the git+file input moves 
 nrb                                                  # or: sudo rebuild
 ```
 
-From 9f7eaf52f048 on, the module restarts the agent and panel itself on a
+From 58e5a22fd40a on, the module restarts the agent and panel itself on a
 switch (`system.userActivationScripts`), when the package changed or the
 agent isn't running. switch-to-configuration starts no new user units and
 restarts no changed ones. The switch that brings this in still runs the old
