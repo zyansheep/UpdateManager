@@ -229,7 +229,15 @@ def update_section(host, system, ci_state, settings=None, previous=None, have_lo
     if out['up_to_date']:
         out['state'] = 'current'
         return out
-    out['state'] = 'available'
+    # Not every other system is older than CI's: a machine may run a local build (rebuilt from a
+    # checkout with changes CI hasn't seen) or a newer commit. Only an older one is an update.
+    target_rev = (target.get('rev') or '')[:12]
+    if not rev or rev.endswith('-dirty'):
+        out['state'] = 'local'
+    elif out['commits'] == [] and rev[:12] != target_rev:
+        out['state'] = 'ahead'
+    else:
+        out['state'] = 'available'
     # The diff and download estimate only change when one of the two systems does.
     key = f"{current}->{target['path']}"
     if previous and previous.get('key') == key and previous.get('diff') is not None:

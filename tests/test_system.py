@@ -76,6 +76,11 @@ class SystemTest(unittest.TestCase):
         light = system.update_section('laptop', {'current': '/nix/store/' + 'd' * 32 + '-nixos-system-laptop-0'},
                                       ci_state, settings={'flake': '/nonexistent', 'nixos_ci': {'state': '/x'}},
                                       heavy=False)
-        self.assertEqual(light['state'], 'available')
+        self.assertEqual(light['state'], 'local')  # its commit isn't known: not an update, a local build
         self.assertTrue(light['pending'])
-        self.assertIsNone(light['behind'])  # its commit isn't known
+        self.assertIsNone(light['behind'])
+        dirty = system.update_section('laptop', {'current': '/nix/store/' + 'd' * 32 + '-nixos-system-laptop-0',
+                                                 'rev': 'abcdef123456-dirty'},
+                                      ci_state, settings={'flake': '/nonexistent', 'nixos_ci': {'state': '/x'}},
+                                      heavy=False)
+        self.assertEqual(dirty['state'], 'local')
