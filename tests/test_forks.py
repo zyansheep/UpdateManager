@@ -75,12 +75,33 @@ class ForksTest(unittest.TestCase):
         self.assertEqual(state['status'], 'conflicts')
         self.assertEqual(state['conflicts'], ['a'])
         self.assertFalse(forks.apply(r.config())['ok'])
-        brief = forks.brief(r.config(notes='Keep the fork.'), state, host='desktop')
+        brief = forks.brief(r.config(notes='Keep the fork.'), state, host='desktop', today='20261029')
         self.assertIn('`a`', brief)
         self.assertIn('Keep the fork.', brief)
-        self.assertIn("Don't push", brief)
-        self.assertIn('git worktree add ../f-merge -b merge-upstream-', brief)
-        self.assertIn('git merge refs/remotes/upstream/main', brief)
+        # A review: it reports and asks before it changes anything, and never pushes.
+        self.assertIn('change nothing yet', brief)
+        self.assertIn("stop and wait for the user's answer", brief)
+        for part in ('how intrusive', "Collisions with the fork's own commits", 'effort and risk', 'recommend',
+                     'Questions'):
+            self.assertIn(part, brief)
+        self.assertIn('git merge-tree --write-tree --name-only patched refs/remotes/upstream/main', brief)
+        self.assertNotIn('git merge refs/', brief)  # no merge to run straight away
+        # A worktree merge only once the user says so, after the report.
+        worktree = 'git worktree add ../f-merge -b merge-upstream-20261029 patched'
+        self.assertIn(worktree, brief)
+        self.assertLess(brief.index('Report, then ask and wait'), brief.index('Only when the user says so'))
+        self.assertLess(brief.index('Only when the user says so'), brief.index(worktree))
+        self.assertIn('never push', brief)
+
+    def test_patch_brief_reviews_first(self):
+        brief = forks.patch_brief({'name': 'vicinae', 'attr': 'vicinae', 'locked': '0.29.1', 'upstream': '0.29.2',
+                                   'files': ['p/a.patch'], 'where': 'niri.nix'}, today='20261029')
+        self.assertIn('change nothing yet', brief)
+        self.assertIn("stop and wait for the user's answer", brief)
+        self.assertIn('patch --dry-run', brief)
+        self.assertLess(brief.index('Only when the user says so'),
+                        brief.index('git worktree add ../nixos-conf-vicinae-patches -b patches-vicinae-20261029 main'))
+        self.assertIn('never push', brief)
 
     def test_tag_tracking_and_clean_rebase(self):
         r = ForkRepo()

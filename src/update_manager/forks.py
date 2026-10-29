@@ -269,9 +269,9 @@ def push(fork):
 
 
 def brief(fork, state, host=None, today=None):
-    """The task for an agent that ports a conflicting upstream update by hand. Its thread starts in the
-    repository's own checkout: the work happens in a worktree beside it, so the checkout's HEAD (a
-    submodule's detached commit, say) never moves."""
+    """The task for an agent when an upstream update doesn't apply cleanly: review it, report, ask the user and
+    wait. It changes nothing until the user says how to proceed in the thread, and then only in a worktree
+    beside the checkout (its thread starts in the checkout itself, e.g. a submodule's detached commit)."""
     host = host or config.hostname()
     repo = fork['repo']
     today = today or time.strftime('%Y%m%d')
@@ -281,49 +281,67 @@ def brief(fork, state, host=None, today=None):
     rebase = fork.get('strategy') == 'rebase'
     kind = 'rebase' if rebase else 'merge'
     worktree = f'../{safe_name(fork["name"])}-{kind}'
-    new_branch = f'{kind}-upstream-{today}'
     upstream = state.get('upstream_ref') or state.get('upstream')
     where = (f"the checked-out commit `{state.get('head')}` (a detached HEAD: this is a submodule checkout)"
              if detached else f"the branch `{branch}` (at `{state.get('head')}`)")
+    conflicts = state.get('conflict_count', len(state.get('conflicts') or []))
     lines = [
-        f"# {'Rebase' if rebase else 'Merge'} upstream into {fork['name']}",
+        f"# Review upstream changes for {fork['name']}",
         '',
         f"Repository: `{repo}` on {host}; this thread starts in that checkout. The fork is {where}. "
         f"Upstream: `{fork['upstream']}`, following {state.get('upstream')} at `{state.get('upstream_head')}`, "
         f"fetched as `{upstream}`.",
-        f"The fork has {state.get('ahead')} commits of its own and is {state.get('behind')} behind."
+        f"The fork has {state.get('ahead')} commits of its own and is {state.get('behind')} behind"
+        + (f"; a merge conflicts in {conflicts} files." if conflicts else '.')
         + (f" It is based on {state['based_on']}." if state.get('based_on') else ''),
         '',
         fork.get('notes') or '',
         '',
-        '## What to do',
+        '## Review first: change nothing yet',
         '',
-        'Work in a new worktree beside this checkout, and never change the checkout\'s HEAD:',
+        ("Upstream's changes don't merge cleanly into the fork" if conflicts else
+         "Upstream's changes merge without conflicts, but may still be intrusive")
+        + ", so the user decides how to bring them in. Don't merge, rebase, cherry-pick, commit, check out, or "
+        "make a branch or worktree, and never push. Read only:",
         '',
         '```sh',
-        f'git worktree add {worktree} -b {new_branch} {base}',
-        f'cd {worktree}',
-        f'git {kind} {upstream}',
+        f'git log --reverse --format="%h %an %ad %s" --date=short {base}..{upstream}   # upstream\'s new commits',
+        f'git log --reverse --format="%h %s" {upstream}..{base}                          # the fork\'s own commits',
+        f'git diff --stat $(git merge-base {base} {upstream}) {upstream}                # what upstream touched',
+        f'git merge-tree --write-tree --name-only {base} {upstream}                     # where a merge conflicts',
         '```',
         '',
-    ]
-    if rebase:
-        lines.append("Resolve each conflict so every patch keeps doing what it did, one patch per commit with "
-                     "its message kept.")
-    else:
-        lines.append("Resolve the conflicts. Where upstream changed code the fork rewrote, port the upstream "
-                     "change by hand into the fork's version instead of taking either side.")
-    lines += [
-        "Then run the project's tests and build, and fix what breaks. Leave the result on "
-        f"`{new_branch}` and report what you changed, what you were unsure about, and what to check before "
-        "using it.",
+        'and `git show` on any commit.',
         '',
-        "Don't push. Don't move or commit on "
-        + (f"`{state.get('head')}`" if detached else f"`{branch}`")
-        + " in the original checkout. If this repository is a submodule (nm-sidebar is one, in nixos-conf), "
-        "don't commit a submodule bump in the parent repository.",
+        '## Report, then ask and wait',
         '',
-        f"## Conflicting files ({state.get('conflict_count', len(state.get('conflicts') or []))})",
+        'Write one report, then stop and wait for the user\'s answer in this thread:',
+        '',
+        "1. **Upstream's changes**, per commit or per group of related commits: what each does, and how intrusive "
+        "it is (a small fix, a feature, a refactor that moves or renames code, a rewrite of something the fork "
+        "changed).",
+        "2. **Collisions with the fork's own commits**: which fork commits each upstream change runs into, in the "
+        "conflicting files below, and also where it merges cleanly but changes something a fork commit relies on.",
+        "3. **Options**, each with its effort and risk, and which one you recommend: for example merge everything, "
+        "take some upstream commits, wait for upstream, or drop or rewrite a fork commit that upstream made "
+        "unnecessary.",
+        '4. **Questions**: the specific decisions you need from the user.',
+        '',
+        '## Only when the user says so',
+        '',
+        "If the user tells you in this thread to go ahead, do what they chose in a separate worktree, never in "
+        "this checkout:",
+        '',
+        '```sh',
+        f'git worktree add {worktree} -b {kind}-upstream-{today} {base}',
+        '```',
+        '',
+        "Then run the project's tests and build, and report what you changed and what to check. Never change the "
+        "checkout's HEAD, " + (f"`{state.get('head')}`" if detached else f"or the `{branch}` branch") + ", and never "
+        "push. If this repository is a submodule (nm-sidebar is one, in nixos-conf), don't commit a submodule bump "
+        "in the parent repository.",
+        '',
+        f"## Conflicting files ({conflicts})",
         '',
         *[f'- `{f}`' for f in (state.get('conflicts') or [])[:80]],
     ]
@@ -357,27 +375,46 @@ def patch_check(patch, settings=None, timeout=240):
 
 
 def patch_brief(patch_state, settings=None, today=None):
+    """Like brief(): review what changed upstream and which patches still apply, report, ask, wait."""
     flake = config.get('flake', settings=settings)
     branch = config.get('flake_branch', settings=settings) or 'main'
     today = today or time.strftime('%Y%m%d')
     name = safe_name(patch_state['name'])
     return '\n'.join([
-        f"# Rebase nixos-conf's {patch_state['name']} patches onto {patch_state.get('upstream')}",
+        f"# Review upstream {patch_state['name']} {patch_state.get('upstream')} for nixos-conf's patches",
         '',
         f"`{flake}` patches {patch_state['attr']} (in `{patch_state.get('where')}`). The lock builds "
         f"{patch_state.get('locked')}; upstream nixpkgs now has {patch_state.get('upstream')}.",
         '',
         'Patches:', *[f'- `{f}`' for f in patch_state.get('files', [])],
         '',
-        "Work in a new worktree beside this checkout, and never change the checkout's HEAD:",
+        '## Review first: change nothing yet',
+        '',
+        "Don't edit, commit, update the lock, or make a branch or worktree, and never push. Read only: fetch the "
+        f"new {patch_state['name']} source (e.g. `nix build --no-link --print-out-paths "
+        f"github:NixOS/nixpkgs/nixos-unstable#{patch_state['attr']}.src`), read upstream's changes between "
+        f"{patch_state.get('locked')} and {patch_state.get('upstream')}, and try each patch with "
+        "`patch --dry-run -p1` against a copy of the new source.",
+        '',
+        '## Report, then ask and wait',
+        '',
+        "Write one report, then stop and wait for the user's answer in this thread:",
+        '',
+        "1. **Upstream's changes**, per commit or group: what each does and how intrusive it is.",
+        "2. **Collisions with the patches**: which patches no longer apply, or apply but may no longer do what "
+        "they did, and which ones upstream made unnecessary.",
+        "3. **Options**, each with its effort and risk, and which one you recommend.",
+        '4. **Questions**: the specific decisions you need from the user.',
+        '',
+        '## Only when the user says so',
+        '',
+        "If the user tells you in this thread to go ahead, work in a separate worktree, never in this checkout:",
         '',
         '```sh',
         f'git worktree add ../nixos-conf-{name}-patches -b patches-{name}-{today} {branch}',
         '```',
         '',
-        f"There, update the flake input, build `.#nixosConfigurations.isomorph.pkgs.{patch_state['attr']}` and "
-        "rebase each patch that no longer applies onto the new source, keeping what it does. Run any test the "
-        "override runs. Don't push, and don't commit submodule bumps; report what changed.",
+        "Never change the checkout's HEAD, never push, and don't commit submodule bumps.",
     ])
 
 

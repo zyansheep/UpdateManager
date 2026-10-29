@@ -272,7 +272,7 @@ def do_fork(job, args, log):
             raise ActionError(f"no check result for {args['name']} yet")
         result = handoff.launch(f"patches-{forks.safe_name(args['name'])}", str(config.flake_dir()),
                                 forks.patch_brief(state),
-                                f"Rebase nixos-conf's {args['name']} patches onto {state.get('upstream')}",
+                                f"Review {args['name']} {state.get('upstream')} for nixos-conf's patches",
                                 project_title='nixos-conf')
         job['handoff'] = result
         return result['message']
@@ -294,8 +294,8 @@ def do_fork(job, args, log):
         job['brief'] = brief
         if state.get('status') not in ('conflicts', 'clean-merge', 'clean-rebase'):
             raise ActionError(f"{fork['name']}: {state.get('status')}; nothing for an agent to merge")
-        title = (f"Rebase {fork['name']} onto {state.get('upstream')}" if fork.get('strategy') == 'rebase'
-                 else f"Merge upstream into {fork['name']}")
+        # The agent reviews and asks before it changes anything (forks.brief).
+        title = f"Review upstream changes for {fork['name']}"
         if state.get('conflict_count'):
             title += f" ({state['conflict_count']} conflicts)"
         result = handoff.launch(forks.safe_name(fork['name']), str(expand(fork['repo'])), brief, title,
