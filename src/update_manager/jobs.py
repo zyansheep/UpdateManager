@@ -185,7 +185,7 @@ def journal_tail(unit, lines=15):
 def do_rebuild(job, args, log):
     repo = config.flake_dir()
     if args.get('pull'):
-        status = run(['git', '-C', repo, 'status', '--porcelain', '--untracked-files=no'], timeout=20)
+        status = run(['git', '--no-optional-locks', '-C', repo, 'status', '--porcelain', '--untracked-files=no'], timeout=20)
         if status.strip():
             raise ActionError(f'{repo} has uncommitted changes: not pulling')
         log.write(run(['git', '-C', repo, 'pull', '--ff-only'], timeout=120).encode())
@@ -236,7 +236,7 @@ def do_apply_lock(job, args, log):
     if not lock.exists() or 'lock' not in status.read_text():
         raise ActionError('no updated flake.lock that built for every host')
     repo = config.flake_dir()
-    dirty = run(['git', '-C', repo, 'status', '--porcelain', '--', 'flake.lock'], timeout=20)
+    dirty = run(['git', '--no-optional-locks', '-C', repo, 'status', '--porcelain', '--', 'flake.lock'], timeout=20)
     if dirty.strip():
         raise ActionError('flake.lock has uncommitted changes in the checkout')
     (repo / 'flake.lock').write_bytes(lock.read_bytes())

@@ -30,6 +30,8 @@ PRIVATE = 'refs/update-manager/upstream'
 
 
 def git(repo, *args, timeout=60, check=True, input=None):
+    if args and args[0] == '--no-optional-locks':  # a global option: before -C's command
+        return run(['git', '--no-optional-locks', '-C', repo, *args[1:]], timeout=timeout, check=check, input=input)
     return run(['git', '-C', repo, *args], timeout=timeout, check=check, input=input)
 
 
@@ -128,7 +130,7 @@ def worktree_of(repo, branch):
                 path = current
         if not path:
             return None
-    status = git(path, 'status', '--porcelain', '--untracked-files=no', check=False)
+    status = git(path, '--no-optional-locks', 'status', '--porcelain', '--untracked-files=no', check=False)
     return {'path': path, 'clean': status.returncode == 0 and not status.stdout.strip()}
 
 

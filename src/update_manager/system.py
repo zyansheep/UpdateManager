@@ -297,7 +297,7 @@ def checkout(settings=None):
         return None
     out = {'path': str(repo).replace(str(Path.home()), '~', 1)}
     try:
-        text = run(['git', '-C', repo, 'status', '--porcelain=v2', '--branch'], timeout=15)
+        text = run(['git', '--no-optional-locks', '-C', repo, 'status', '--porcelain=v2', '--branch'], timeout=15)
     except CommandError as e:
         return dict(out, error=str(e))
     dirty = 0
