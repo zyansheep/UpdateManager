@@ -104,7 +104,7 @@ version compared with nixpkgs-unstable's.
 | Upgrade | `nix profile upgrade NAME` (or `--all`). |
 | Fast-forward / Merge / Rebase | only when the preview is clean. If the branch isn't checked out: the new commit is made from the preview and the branch moved with compare-and-swap (`git update-ref new old`). If it's checked out: `git merge`/`rebase` in that worktree, and only when the worktree is clean. Never pushes. |
 | Push | `git push` (`--force-with-lease` after a rebase) to the fork's `push` remote; off for forks whose origin isn't yours. |
-| Ask agent | conflicts: `t3 thread start <repo> - --worktree <branch> --branch update-manager/<name>-<date>` with a generated brief. The agent works in a new worktree and branch and must not push. t3 before 0.1.4 has no `thread` command, and its server takes only MCP client sessions, not `t3 auth session issue` tokens. Then the brief is saved to `~/.local/state/update-manager/briefs/` and copied to the clipboard to paste into a thread. |
+| Ask agent | conflicts: a T3 Code thread on functor, in the repository's T3 project (found by its workspaceRoot, registered if missing), titled like “Merge upstream into nm-sidebar (11 conflicts)”. Its brief has the agent merge in `git worktree add ../<name>-merge -b merge-upstream-<date> <base>`, and never move the checkout's HEAD, push, or commit a submodule bump in nixos-conf. The thread starts through `t3 thread start` when the t3 CLI has it (0.1.4+). Otherwise it goes through T3's MCP endpoint, signed in the way T3 signs in outside agents: a `t3 pair` code approves an OAuth (PKCE) client “update-manager on functor”, and its 30-day token is kept 0600 in `~/.local/state/update-manager/t3/` and renewed 2 days early. That works with t3 0.1.0. If neither works, the brief is saved to `~/.local/state/update-manager/briefs/` and a notification says why. The job's result names the thread and its project. |
 
 Buttons that change a system ask once more ("Switch now?") for 4 seconds.
 
@@ -165,7 +165,11 @@ ones you are likely to change: `hosts.<name>.{ssh,pull,label}`, `ci_host`,
 `cache_url`, `forks` (a list: `name`, `repo`, `branch`, `upstream`,
 `track = "tag"|"branch"`, `tags`, `exclude`, `upstream_branch`,
 `strategy = "merge"|"rebase"`, `push`, `fetch`, `notes` for the agent brief),
-`patches`, `releases`, `intervals`, `panel.{width,height,margin_right}`.
+`patches`, `releases`, `intervals`, `panel.{width,height,margin_right}`, and
+`agent.{enabled,t3,server,model_selection}` (the T3 thread's model; default
+Claude Opus 5.5 at xhigh effort, `{"instanceId": "claudeAgent", "model":
+"claude-opus-5-5", "options": [...]}`), and a fork's `project` (the T3
+project title if it has to be registered).
 
 ## Files
 

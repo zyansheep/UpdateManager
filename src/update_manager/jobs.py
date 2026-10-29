@@ -24,7 +24,7 @@ from pathlib import Path
 
 from . import config
 from .nixlog import Progress
-from .util import CommandError, read_json, run, store_hash, store_name, write_json
+from .util import CommandError, expand, read_json, run, store_hash, store_name, write_json
 
 JOBS = config.STATE / 'jobs'
 STORE_PATH = re.compile(r'^/nix/store/[0-9a-df-np-sv-z]{32}-[A-Za-z0-9+._?=-]+$')
@@ -270,9 +270,10 @@ def do_fork(job, args, log):
                       if p['name'] == args['name']), None)
         if not state:
             raise ActionError(f"no check result for {args['name']} yet")
-        result = handoff.launch(f"patches-{forks.safe_name(args['name'])}", config.get('flake'),
-                                config.get('flake_branch'), forks.patch_brief(state),
-                                f"Rebase nixos-conf's {args['name']} patches onto {state.get('upstream')}")
+        result = handoff.launch(f"patches-{forks.safe_name(args['name'])}", str(config.flake_dir()),
+                                forks.patch_brief(state),
+                                f"Rebase nixos-conf's {args['name']} patches onto {state.get('upstream')}",
+                                project_title='nixos-conf')
         job['handoff'] = result
         return result['message']
     fork = forks.find(args['name'])
@@ -291,8 +292,14 @@ def do_fork(job, args, log):
         state = forks.check(fork, do_fetch=False)
         brief = forks.brief(fork, state)
         job['brief'] = brief
-        result = handoff.launch(forks.safe_name(fork['name']), fork['repo'], state.get('branch') or 'HEAD', brief,
-                                f"Port {state.get('upstream')} into {fork['name']}")
+        if state.get('status') not in ('conflicts', 'clean-merge', 'clean-rebase'):
+            raise ActionError(f"{fork['name']}: {state.get('status')}; nothing for an agent to merge")
+        title = (f"Rebase {fork['name']} onto {state.get('upstream')}" if fork.get('strategy') == 'rebase'
+                 else f"Merge upstream into {fork['name']}")
+        if state.get('conflict_count'):
+            title += f" ({state['conflict_count']} conflicts)"
+        result = handoff.launch(forks.safe_name(fork['name']), str(expand(fork['repo'])), brief, title,
+                                project_title=fork.get('project') or fork['name'])
         job['handoff'] = result
         return result['message']
     raise ActionError(kind)

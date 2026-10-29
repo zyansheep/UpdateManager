@@ -78,7 +78,7 @@ DEFAULTS = {
                   "The user's branch adds the vendored Z3 Code package."},
         {'name': 'nm-sidebar', 'repo': '~/nixos-conf/cells/common/vendor/nm-sidebar', 'branch': 'HEAD',
          'upstream': 'https://github.com/Relz/network-manager-sidebar', 'track': 'branch',
-         'upstream_branch': 'main', 'strategy': 'merge', 'push': None,
+         'upstream_branch': 'main', 'strategy': 'merge', 'push': None, 'project': 'nm-sidebar (nixos-conf vendor)',
          'notes': 'A git submodule of nixos-conf: the fork zyansheep/network-manager-sidebar of '
                   'Relz/network-manager-sidebar. After merging, commit the submodule bump in nixos-conf.'},
     ],
@@ -103,7 +103,12 @@ DEFAULTS = {
     'patches_upstream': 'github:NixOS/nixpkgs/nixos-unstable',
     'patches_host': 'isomorph',
     # Conflicting merges go to an agent: a T3 Code thread on this machine's T3 server.
-    'agent': {'enabled': True, 't3': ['t3', '~/.nix-profile/bin/t3'], 'model': None, 'provider': None},
+    # T3 Code's server is found from ~/.t3/userdata/server-runtime.json unless `server` is set
+    # (e.g. "http://100.64.0.4:3773"). model_selection is t3_thread_launch's.
+    'agent': {'enabled': True, 't3': ['t3', '~/.nix-profile/bin/t3'], 'server': None,
+              'model_selection': {'instanceId': 'claudeAgent', 'model': 'claude-opus-5-5',
+                                  'options': [{'id': 'effort', 'value': 'xhigh'},
+                                              {'id': 'fastMode', 'value': False}]}},
     # isomorph's screen is 1200x675 logical pixels (1920x1080 at scale 1.6): the panel fits under the bar.
     'panel': {'margin': 0, 'margin_right': 150, 'width': 600, 'height': 500},
     'waybar': {'signal': 13},

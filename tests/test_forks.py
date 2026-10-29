@@ -78,7 +78,9 @@ class ForksTest(unittest.TestCase):
         brief = forks.brief(r.config(notes='Keep the fork.'), state, host='desktop')
         self.assertIn('`a`', brief)
         self.assertIn('Keep the fork.', brief)
-        self.assertIn('Do not push', brief)
+        self.assertIn("Don't push", brief)
+        self.assertIn('git worktree add ../f-merge -b merge-upstream-', brief)
+        self.assertIn('git merge refs/remotes/upstream/main', brief)
 
     def test_tag_tracking_and_clean_rebase(self):
         r = ForkRepo()

@@ -155,6 +155,7 @@ def check(fork, do_fetch=True, now=None):
         label, ref = upstream_ref(repo, fork)
         theirs = git(repo, 'rev-parse', ref).strip()
         out['upstream'], out['upstream_head'] = label, theirs[:12]
+        out['upstream_ref'] = ref.removesuffix('^{commit}')
         out['behind'] = count(repo, f'{head}..{theirs}')
         out['ahead'] = count(repo, f'{theirs}..{head}')
         out['upstream_log'] = [line for line in git(repo, 'log', '--format=%h %s', '--max-count=8',
@@ -267,43 +268,60 @@ def push(fork):
     return {'ok': True, 'message': f"pushed {branch} ({head[:8]}) to {remote}"}
 
 
-def brief(fork, state, host=None):
-    """The task for an agent that ports a conflicting upstream update by hand."""
+def brief(fork, state, host=None, today=None):
+    """The task for an agent that ports a conflicting upstream update by hand. Its thread starts in the
+    repository's own checkout: the work happens in a worktree beside it, so the checkout's HEAD (a
+    submodule's detached commit, say) never moves."""
     host = host or config.hostname()
     repo = fork['repo']
+    today = today or time.strftime('%Y%m%d')
     branch = state.get('branch') or fork.get('branch')
     detached = branch == 'HEAD'
-    if detached:  # a submodule's checkout: there is no branch to protect, only the commit
-        branch = f"{state.get('head')} (the checked-out commit; a detached HEAD, e.g. a submodule)"
+    base = state.get('head') if detached else branch
+    rebase = fork.get('strategy') == 'rebase'
+    kind = 'rebase' if rebase else 'merge'
+    worktree = f'../{safe_name(fork["name"])}-{kind}'
+    new_branch = f'{kind}-upstream-{today}'
+    upstream = state.get('upstream_ref') or state.get('upstream')
+    where = (f"the checked-out commit `{state.get('head')}` (a detached HEAD: this is a submodule checkout)"
+             if detached else f"the branch `{branch}` (at `{state.get('head')}`)")
     lines = [
-        f"# Bring {fork['name']} up to date with its upstream",
+        f"# {'Rebase' if rebase else 'Merge'} upstream into {fork['name']}",
         '',
-        f"Repository: `{repo}` on {host}. Fork branch: `{branch}` (at {state.get('head')}). "
-        f"Upstream: `{fork['upstream']}`, following {state.get('upstream')} (at {state.get('upstream_head')}).",
-        f"The fork is {state.get('ahead')} commits ahead and {state.get('behind')} behind."
+        f"Repository: `{repo}` on {host}; this thread starts in that checkout. The fork is {where}. "
+        f"Upstream: `{fork['upstream']}`, following {state.get('upstream')} at `{state.get('upstream_head')}`, "
+        f"fetched as `{upstream}`.",
+        f"The fork has {state.get('ahead')} commits of its own and is {state.get('behind')} behind."
         + (f" It is based on {state['based_on']}." if state.get('based_on') else ''),
         '',
         fork.get('notes') or '',
         '',
         '## What to do',
         '',
+        'Work in a new worktree beside this checkout, and never change the checkout\'s HEAD:',
+        '',
+        '```sh',
+        f'git worktree add {worktree} -b {new_branch} {base}',
+        f'cd {worktree}',
+        f'git {kind} {upstream}',
+        '```',
+        '',
     ]
-    if fork.get('strategy') == 'rebase':
-        lines += [
-            f"Rebase the fork's own commits onto {state.get('upstream')} in a new worktree on a new branch "
-            f"(e.g. `{branch}-{state.get('upstream')}`), resolving each conflict so the patch keeps doing what it "
-            "did. Keep the commits separate (one patch per commit, same messages).",
-        ]
+    if rebase:
+        lines.append("Resolve each conflict so every patch keeps doing what it did, one patch per commit with "
+                     "its message kept.")
     else:
-        lines += [
-            f"Merge {state.get('upstream')} into `{branch}` in a new worktree on a new branch, resolving the "
-            "conflicts. Where upstream changed code the fork rewrote, port the upstream change by hand into the "
-            "fork's version instead of taking either side.",
-        ]
+        lines.append("Resolve the conflicts. Where upstream changed code the fork rewrote, port the upstream "
+                     "change by hand into the fork's version instead of taking either side.")
     lines += [
-        "Then run the project's tests and build, and fix what breaks. Do not push"
-        + ('' if detached else f" and do not touch the `{branch}` branch itself") + ": leave the result on the new "
-        "branch and report what you changed, what you were unsure about, and what to check before merging it.",
+        "Then run the project's tests and build, and fix what breaks. Leave the result on "
+        f"`{new_branch}` and report what you changed, what you were unsure about, and what to check before "
+        "using it.",
+        '',
+        "Don't push. Don't move or commit on "
+        + (f"`{state.get('head')}`" if detached else f"`{branch}`")
+        + " in the original checkout. If this repository is a submodule (nm-sidebar is one, in nixos-conf), "
+        "don't commit a submodule bump in the parent repository.",
         '',
         f"## Conflicting files ({state.get('conflict_count', len(state.get('conflicts') or []))})",
         '',
@@ -338,19 +356,28 @@ def patch_check(patch, settings=None, timeout=240):
     return out
 
 
-def patch_brief(patch_state, settings=None):
+def patch_brief(patch_state, settings=None, today=None):
     flake = config.get('flake', settings=settings)
+    branch = config.get('flake_branch', settings=settings) or 'main'
+    today = today or time.strftime('%Y%m%d')
+    name = safe_name(patch_state['name'])
     return '\n'.join([
-        f"# Check nixos-conf's {patch_state['name']} patches against {patch_state.get('upstream')}",
+        f"# Rebase nixos-conf's {patch_state['name']} patches onto {patch_state.get('upstream')}",
         '',
         f"`{flake}` patches {patch_state['attr']} (in `{patch_state.get('where')}`). The lock builds "
         f"{patch_state.get('locked')}; upstream nixpkgs now has {patch_state.get('upstream')}.",
         '',
         'Patches:', *[f'- `{f}`' for f in patch_state.get('files', [])],
         '',
-        f"Update the flake input on a new branch, build `.#nixosConfigurations.isomorph.pkgs.{patch_state['attr']}` "
-        "and rebase each patch that no longer applies onto the new source, keeping what it does. Run any test "
-        "the override runs. Do not push; report what changed.",
+        "Work in a new worktree beside this checkout, and never change the checkout's HEAD:",
+        '',
+        '```sh',
+        f'git worktree add ../nixos-conf-{name}-patches -b patches-{name}-{today} {branch}',
+        '```',
+        '',
+        f"There, update the flake input, build `.#nixosConfigurations.isomorph.pkgs.{patch_state['attr']}` and "
+        "rebase each patch that no longer applies onto the new source, keeping what it does. Run any test the "
+        "override runs. Don't push, and don't commit submodule bumps; report what changed.",
     ])
 
 

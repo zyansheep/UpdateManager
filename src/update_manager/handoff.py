@@ -1,17 +1,22 @@
 """Hand a conflicting upstream merge to an agent: a T3 Code thread on this machine.
 
-`t3 thread start <repo> - --worktree <branch> --branch <new> --json` (t3 0.1.4 and
-later) signs in to the running T3 server as an MCP client and launches the thread
-in a fresh worktree, so the agent never touches the fork's branch. Older t3 CLIs
-(0.1.0 has no `thread` command, and its server only takes MCP client sessions,
-not `t3 auth session issue` tokens) fall back to saving the brief, copying it to
-the clipboard and saying so; paste it into a new thread in that project.
+In order:
+1. `t3 thread start <repo> - --json` when the t3 CLI has it (0.1.4 and later);
+2. T3's MCP endpoint, signed in as an outside agent (t3mcp.py): find the
+   repository's project by its workspaceRoot (or register it), then
+   t3_thread_launch with the brief. This works with t3 0.1.0;
+3. otherwise save the brief, copy it to this machine's clipboard and say so.
+
+The thread runs in the repository's own checkout (workspaceStrategy root);
+the brief has the agent do its work in a `git worktree` beside it.
 """
+import json
 import os
 import shutil
+import subprocess
 import time
 
-from . import config
+from . import config, t3mcp
 from .util import CommandError, expand, run, write_json
 
 
@@ -50,32 +55,50 @@ def copy_to_clipboard(text):
         return False
 
 
-def launch(name, repo, base_ref, brief, title, settings=None):
-    """Start the agent. Returns {'ok', 'method', 'thread'?, 'brief_path', 'message'}."""
+def notify(summary, body):
+    if os.environ.get('WAYLAND_DISPLAY') and shutil.which('notify-send'):
+        subprocess.run(['notify-send', '--app-name=Updates', summary, body], capture_output=True)
+
+
+def via_cli(t3, repo, brief, title, settings=None):
+    args = [t3, 'thread', 'start', str(expand(repo)), '-', '--title', title, '--json']
+    selection = t3mcp.model_selection(settings)
+    if selection.get('instanceId') and selection.get('model'):
+        args += ['--provider', selection['instanceId'], '--model', selection['model']]
+    launched = json.loads(run(args, input=brief, timeout=120))
+    return {'thread': launched.get('threadId'), 'title': title, 'projectId': launched.get('projectId')}
+
+
+def launch(name, repo, brief, title, project_title=None, settings=None):
+    """Start the agent. Returns {'ok', 'method', 'thread'?, 'title', 'project'?, 'brief_path', 'message', 'tried'}."""
     path = save_brief(name, brief)
-    out = {'brief_path': str(path)}
+    out = {'brief_path': str(path), 'title': title, 'tried': []}
     agent = config.get('agent', settings=settings) or {}
-    t3 = t3_binary(settings) if agent.get('enabled', True) else None
-    if t3 and supports_threads(t3):
-        branch = f"update-manager/{name}-{time.strftime('%Y%m%d')}"
-        args = [t3, 'thread', 'start', str(expand(repo)), '-', '--title', title, '--worktree', base_ref,
-                '--branch', branch, '--json']
-        if agent.get('provider') and agent.get('model'):
-            args += ['--provider', agent['provider'], '--model', agent['model']]
+    if agent.get('enabled', True):
+        t3 = t3_binary(settings)
+        if t3 and supports_threads(t3):
+            try:
+                out.update(via_cli(t3, repo, brief, title, settings), ok=True, method='t3-thread')
+                out['message'] = f"Started the T3 thread “{title}” in {repo}"
+                write_json(path.with_suffix('.json'), out)
+                return out
+            except (CommandError, ValueError) as e:
+                out['tried'].append(f't3 thread start: {str(e)[:200]}')
         try:
-            import json
-            launched = json.loads(run(args, input=brief, timeout=120))
-            out.update(ok=True, method='t3-thread', thread=launched.get('threadId'), branch=branch,
-                       message=f"Started T3 thread {launched.get('threadId')} on {branch}")
+            started = t3mcp.launch(repo, project_title or name, title, brief, settings)
+            out.update(started, ok=True, method='mcp')
+            out['message'] = (f"Started the T3 thread “{title}” in the project “{started['project']}”"
+                              + (' (new project)' if started.get('created_project') else ''))
             write_json(path.with_suffix('.json'), out)
             return out
-        except (CommandError, ValueError) as e:
-            out['t3_error'] = str(e)[:300]
+        except (t3mcp.T3Error, CommandError, ValueError, KeyError) as e:
+            out['tried'].append(f'T3 MCP: {str(e)[:200]}')
     copied = copy_to_clipboard(brief)
-    why = out.get('t3_error') or ("this t3 has no `thread` command (it needs t3 0.1.4 or later)" if t3
-                                  else 'no t3 CLI found')
+    why = '; '.join(out['tried']) or 'agent handoff is off (agent.enabled)'
     out.update(ok=True, method='brief', copied=copied,
-               message=(f"Brief saved to {path}" + (' and copied' if copied else '') +
-                        f": paste it into a new T3 thread in {repo} ({why})"))
+               message=(f"No T3 thread ({why}). The brief is in {path}" + (', copied to the clipboard' if copied
+                                                                           else '')
+                        + f": paste it into a new thread in {repo}"))
+    notify(f'Brief for {title}', out['message'])
     write_json(path.with_suffix('.json'), out)
     return out
