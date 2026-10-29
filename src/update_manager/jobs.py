@@ -389,7 +389,7 @@ def run_job(ident):
 
 
 def notify(job):
-    if not os.environ.get('WAYLAND_DISPLAY') or not shutil.which('notify-send'):
+    if job['kind'] == 'refresh' or not os.environ.get('WAYLAND_DISPLAY') or not shutil.which('notify-send'):
         return
     subprocess.run(['notify-send', '--app-name=Updates', f"{job['title']}: {job['state']}",
                     job.get('message') or ''], capture_output=True)

@@ -87,7 +87,7 @@ def duration_text(seconds):
     if m < 60:
         return f'{m} min'
     h, m = divmod(m, 60)
-    if h < 48:
+    if h < 36:
         return f'{h} h {m:02d} min' if m else f'{h} h'
     return f'{round(h / 24)} d'
 

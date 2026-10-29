@@ -29,6 +29,7 @@ from . import collect, config, text  # noqa: E402
 from .util import ago_text, clock_text, duration_text, size_text  # noqa: E402
 
 CONFIRM_S = 4  # A button that changes a system asks once more for this long.
+EXPAND = bool(os.environ.get('UPDATE_MANAGER_PANEL_EXPAND'))  # every expander open (screenshots)
 PALETTE = b"""
 @define-color menu_bg #222226;
 @define-color menu_card #343437;
@@ -62,6 +63,8 @@ window.um, window.um > * { background: transparent; }
 .um .tag.stale { background: alpha(#f6d32d, 0.14); color: #f9e27d; }
 .um button { padding: 3px 10px; min-height: 26px; border-radius: 7px; }
 .um button.suggested-action { background: @menu_accent; color: white; }
+.um button:disabled { opacity: 0.45; }
+.um button.suggested-action:disabled { background: alpha(@menu_accent, 0.35); }
 .um button.confirm { background: #c64600; color: white; }
 .um .commit { font-size: 12px; }
 .um .hash { font-family: monospace; font-size: 11.5px; color: #99c1f1; }
@@ -135,6 +138,13 @@ class Panel(Adw.Application):
             action = Gio.SimpleAction.new(name, kind)
             action.connect('activate', self.toggle_action if name == 'toggle' else self.show_page)
             self.add_action(action)
+        if os.environ.get('UPDATE_MANAGER_PANEL_DEBUG'):
+            # Driving the panel without a pointer (headless tests): click a button or expander by its
+            # label, scroll the page to a fraction.
+            for name, handler in (('debug-click', self.debug_click), ('debug-scroll', self.debug_scroll)):
+                action = Gio.SimpleAction.new(name, GLib.VariantType.new('s'))
+                action.connect('activate', handler)
+                self.add_action(action)
         css = Gtk.CssProvider()
         theme = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'waybar/menu-theme.css'
         try:
@@ -155,7 +165,7 @@ class Panel(Adw.Application):
         self.window.add_css_class('um')
         self.window.connect('close-request', self.close)
         self.window.connect('notify::is-active', self.focus_changed)
-        width = int(config.get('panel', 'width') or 720)
+        width = int(config.get('panel', 'width') or 600)
         if LayerShell is not None and LayerShell.is_supported():
             self.window.set_decorated(False)
             LayerShell.init_for_window(self.window)
@@ -168,7 +178,7 @@ class Panel(Adw.Application):
             LayerShell.set_anchor(self.window, LayerShell.Edge.RIGHT, True)
             LayerShell.set_margin(self.window, LayerShell.Edge.TOP, int(config.get('panel', 'margin') or 0) + 4)
             LayerShell.set_margin(self.window, LayerShell.Edge.RIGHT,
-                                  int(config.get('panel', 'margin_right') or 180))
+                                  int(config.get('panel', 'margin_right') or 150))
         keys = Gtk.EventControllerKey()
         keys.connect('key-pressed', self.key)
         self.window.add_controller(keys)
@@ -181,9 +191,8 @@ class Panel(Adw.Application):
         card.set_size_request(width, -1)
         header = box(False, 10)
         header.append(label('', ['title'], valign=Gtk.Align.CENTER))
-        header.append(label('Updates', 'title', valign=Gtk.Align.CENTER))
-        self.headline = label('', ['muted', 'small'], hexpand=True, ellipsize=True, valign=Gtk.Align.CENTER)
-        header.append(self.headline)
+        header.append(label('Updates', 'title', valign=Gtk.Align.CENTER, hexpand=True))
+        self.headline = label('', ['muted', 'small'], wrap=True)
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, vhomogeneous=False)
         switcher = Gtk.StackSwitcher(stack=self.stack, valign=Gtk.Align.CENTER)
         header.append(switcher)
@@ -197,6 +206,7 @@ class Panel(Adw.Application):
         close.connect('clicked', self.close)
         header.append(close)
         card.append(header)
+        card.append(self.headline)
         self.problem = label('', 'problem', wrap=True, visible=False)
         card.append(self.problem)
 
@@ -204,7 +214,7 @@ class Panel(Adw.Application):
         self.upstream = box(spacing=10)
         for name, title, child in (('machines', 'Machines', self.machines), ('upstream', 'Upstream', self.upstream)):
             scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
-                                          max_content_height=int(config.get('panel', 'height') or 820))
+                                          max_content_height=int(config.get('panel', 'height') or 500))
             scroller.set_child(child)
             self.stack.add_titled(scroller, name, title)
         card.append(self.stack)
@@ -249,12 +259,47 @@ class Panel(Adw.Application):
         if not self.window.get_visible():
             self.toggle()
 
+    def widgets(self, root):
+        child = root.get_first_child()
+        while child is not None:
+            yield child
+            yield from self.widgets(child)
+            child = child.get_next_sibling()
+
+    def debug_click(self, _action, value):
+        wanted = value.get_string()
+        for widget in self.widgets(self.window):
+            if not widget.get_mapped():
+                continue
+            if isinstance(widget, Gtk.Expander) and (widget.get_label() or '').startswith(wanted):
+                widget.set_expanded(not widget.get_expanded())
+                return
+            if isinstance(widget, Gtk.Button) and widget.get_label() == wanted and widget.get_sensitive():
+                widget.emit('clicked')
+                return
+            if isinstance(widget, Gtk.StackSwitcher):
+                for button in self.widgets(widget):
+                    if isinstance(button, Gtk.ToggleButton) and any(
+                            isinstance(w, Gtk.Label) and w.get_label() == wanted for w in self.widgets(button)):
+                        button.set_active(True)
+                        return
+        print(f'debug-click: nothing called {wanted!r}', file=sys.stderr)
+
+    def debug_scroll(self, _action, value):
+        scroller = self.stack.get_visible_child()
+        adjustment = scroller.get_vadjustment()
+        top = adjustment.get_upper() - adjustment.get_page_size()
+        adjustment.set_value(max(0.0, top * float(value.get_string())))
+
     def tick(self):
         self.render()  # relative times ("seen 2 min ago")
         return True
 
-    def file_changed(self, _monitor, file, _other, event):
-        if file.get_basename() == collect.VIEW.name and event in (
+    def file_changed(self, _monitor, file, other, event):
+        # The agent replaces state.json by renaming a temporary file over it: that is RENAMED with
+        # state.json as the *other* file.
+        names = {f.get_basename() for f in (file, other) if f is not None}
+        if collect.VIEW.name in names and event in (
                 Gio.FileMonitorEvent.CHANGES_DONE_HINT, Gio.FileMonitorEvent.CREATED, Gio.FileMonitorEvent.RENAMED,
                 Gio.FileMonitorEvent.MOVED_IN):
             GLib.timeout_add(100, lambda: self.load() and False)
@@ -422,6 +467,9 @@ class Panel(Adw.Application):
             if update.get('error'):
                 card.append(label(update['error'], 'problem', wrap=True))
         card.append(self.host_actions(name, host, state))
+        if update.get('state') == 'available' and not (host.get('capabilities') or {}).get('switch_units'):
+            card.append(label('Switch and Boot need the root units from the nixos-conf update-manager branch; '
+                              'Rebuild works without them.', ['muted', 'small'], wrap=True))
         if host.get('queued'):
             for request in host['queued']:
                 card.append(label(f"Queued: {request['action']} (asked {ago_text(request.get('queued'), now)}; "
@@ -449,7 +497,7 @@ class Panel(Adw.Application):
         if diff['removed']:
             parts.append(f"{diff['removed']} removed")
         parts.append(('+' if diff['size_delta'] >= 0 else '') + size_text(diff['size_delta']))
-        expander = Gtk.Expander(label='Changes: ' + ' · '.join(parts))
+        expander = Gtk.Expander(label='Changes: ' + ' · '.join(parts), expanded=EXPAND)
         rows = box(spacing=1, margin_start=12, margin_top=4)
         for change in diff['changes'][:30]:
             row = box(False, 8)
@@ -537,7 +585,7 @@ class Panel(Adw.Application):
                  else f"Profile packages: {len(items)}, all current")
         if oldest > 60:
             title += f" · oldest pinned {round(oldest / 30)} months ago"
-        expander = Gtk.Expander(label=title)
+        expander = Gtk.Expander(label=title, expanded=EXPAND)
         rows = box(spacing=3, margin_start=12, margin_top=4)
         for item in sorted(items, key=lambda i: (not i.get('update'), i['name'])):
             row = box(False, 8)
@@ -654,7 +702,7 @@ class Panel(Adw.Application):
         card.append(row)
         history = [h for h in ci.get('history') or [] if h.get('seconds')][:5]
         if history:
-            expander = Gtk.Expander(label='Recent builds')
+            expander = Gtk.Expander(label='Recent builds', expanded=EXPAND)
             rows = box(spacing=1, margin_start=12, margin_top=4)
             for h in history:
                 ok = all(h['hosts'].values()) if h['hosts'] else False
@@ -747,7 +795,7 @@ class Panel(Adw.Application):
                 lines.append(label(f"and {item['behind'] - 4} more", ['muted', 'small']))
             card.append(lines)
         if item.get('conflicts'):
-            expander = Gtk.Expander(label=f"Conflicting files ({item.get('conflict_count')})")
+            expander = Gtk.Expander(label=f"Conflicting files ({item.get('conflict_count')})", expanded=EXPAND)
             rows = box(spacing=0, margin_start=12)
             for f in item['conflicts'][:25]:
                 rows.append(label(f, ['mono', 'muted'], ellipsize=True))

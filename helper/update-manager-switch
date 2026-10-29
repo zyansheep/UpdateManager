@@ -23,8 +23,10 @@ set -euo pipefail
 mode=${1:-}
 name=${2:-}
 host=${UPDATE_MANAGER_HOST:-$(hostname)}
-run_dir=/run/update-manager
-state_dir=/var/lib/update-manager
+# The units set these; tests/test-helper.sh points them at a scratch directory.
+run_dir=${UPDATE_MANAGER_SYSTEM_RUNTIME:-/run/update-manager}
+state_dir=${UPDATE_MANAGER_SYSTEM_STATE:-/var/lib/update-manager}
+profile=${UPDATE_MANAGER_SYSTEM_PROFILE:-/nix/var/nix/profiles/system}
 substituters=${UPDATE_MANAGER_SUBSTITUTERS:-}
 
 case $mode in
@@ -47,7 +49,7 @@ progress=$run_dir/$hash.json
 result=$run_dir/$hash.result.json
 rm -f "$progress" "$result"
 started=$(date +%s)
-from=$(readlink -f /run/current-system || true)
+from=$(readlink -f "${UPDATE_MANAGER_CURRENT_SYSTEM:-/run/current-system}" || true)
 
 finish() {
   local ok=$1 message=$2 fetched=${3:-$started}
@@ -79,7 +81,7 @@ if [ ! -x "$path/bin/switch-to-configuration" ]; then
 fi
 
 echo "setting the system profile to $name"
-nix-env --profile /nix/var/nix/profiles/system --set "$path"
+nix-env --profile "$profile" --set "$path"
 echo "running switch-to-configuration $mode"
 set +e
 systemd-run -E LOCALE_ARCHIVE -E NIXOS_INSTALL_BOOTLOADER --collect --no-ask-password --pipe --quiet \

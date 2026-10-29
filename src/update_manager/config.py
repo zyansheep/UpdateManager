@@ -104,7 +104,8 @@ DEFAULTS = {
     'patches_host': 'isomorph',
     # Conflicting merges go to an agent: a T3 Code thread on this machine's T3 server.
     'agent': {'enabled': True, 't3': ['t3', '~/.nix-profile/bin/t3'], 'model': None, 'provider': None},
-    'panel': {'margin': 0, 'width': 720},
+    # isomorph's screen is 1200x675 logical pixels (1920x1080 at scale 1.6): the panel fits under the bar.
+    'panel': {'margin': 0, 'margin_right': 150, 'width': 600, 'height': 500},
     'waybar': {'signal': 13},
 }
 
