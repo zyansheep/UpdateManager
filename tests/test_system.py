@@ -28,6 +28,8 @@ class SystemTest(unittest.TestCase):
     def test_split_name(self):
         self.assertEqual(system.split_name('python3.11-yt-dlp-2024.12.6'), ('python3.11-yt-dlp', '2024.12.6'))
         self.assertEqual(system.split_name('etc'), ('etc', ''))
+        self.assertEqual(system.split_name('glibc-2.44-25-bin'), ('glibc', '2.44-25'))
+        self.assertEqual(system.split_name('systemd-261.3-dev'), ('systemd', '261.3'))
         self.assertEqual(system.kernel_version('/nix/store/' + 'k' * 32 + '-linux-6.18.55/bzImage'), '6.18.55')
 
     def test_dry_run(self):

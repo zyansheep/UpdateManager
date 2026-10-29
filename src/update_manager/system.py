@@ -89,9 +89,19 @@ def path_infos(path, store=None, timeout=120):
     return {p: info for p, info in data.items() if info}
 
 
+OUTPUT = re.compile(r'-(dev|bin|man|doc|devdoc|lib|out|env|info|getent|debug|static|data|tools|modules|'
+                    r'python|py|terminfo|udev|nscd|sandbox|config)$')
+
+
 def split_name(name):
+    """pname and version, without the output name (glibc-2.44-25-bin -> glibc, 2.44-25)."""
     m = DRV_NAME.match(name)
-    return (m[1], m[2]) if m else (name, '')
+    if not m:
+        return (name, '')
+    version = m[2]
+    while (stripped := OUTPUT.sub('', version)) != version:
+        version = stripped
+    return (m[1], version)
 
 
 def closure_groups(infos):
