@@ -29,6 +29,9 @@ from . import collect, config, text  # noqa: E402
 from .util import ago_text, clock_text, duration_text, size_text  # noqa: E402
 
 CONFIRM_S = 4  # A button that changes a system asks once more for this long.
+# A toggle this soon after the panel closed on losing focus keeps it closed: clicking the bar's widget
+# takes the focus first (which closes the panel), then runs the toggle, which would open it again.
+REOPEN_GUARD_S = 0.6
 EXPAND = bool(os.environ.get('UPDATE_MANAGER_PANEL_EXPAND'))  # every expander open (screenshots)
 PALETTE = b"""
 @define-color menu_bg #222226;
@@ -127,6 +130,7 @@ class Panel(Adw.Application):
         self.window = None
         self.state = None
         self.focused_once = False
+        self.closed_by_focus = 0.0  # when the panel last closed because it lost the focus (monotonic)
         self.pending = {}  # button key -> deadline, for the confirm-once buttons
         self.busy_keys = set()  # actions sent, waiting for an answer
         self.tick_source = None
@@ -237,6 +241,7 @@ class Panel(Adw.Application):
             self.focused_once = True
         elif self.focused_once and self.window.get_visible() and not os.environ.get('UPDATE_MANAGER_PANEL_STAY'):
             self.close()
+            self.closed_by_focus = time.monotonic()
 
     def close(self, *_):
         self.window.set_visible(False)
@@ -248,20 +253,38 @@ class Panel(Adw.Application):
     def toggle_action(self, *_):
         self.toggle()
 
+    def just_closed_by_click(self):
+        """Whether this toggle comes from the click that just took the focus away (and so closed the panel)."""
+        recent = time.monotonic() - self.closed_by_focus < REOPEN_GUARD_S
+        self.closed_by_focus = 0.0
+        return recent
+
     def toggle(self):
         if self.window.get_visible():
             self.close()
-            return
+        elif not self.just_closed_by_click():
+            self.open()
+
+    def open(self):
         self.focused_once = False
         self.load()
         self.window.present()
         self.tick_source = self.tick_source or GLib.timeout_add_seconds(5, self.tick)
 
     def show_page(self, _action, page):
-        if self.stack.get_child_by_name(page.get_string()):
-            self.stack.set_visible_child_name(page.get_string())
+        """Open on a page; on the page already shown, close (as toggle does)."""
+        name = page.get_string()
+        if not self.stack.get_child_by_name(name):
+            return self.toggle()
+        same = self.stack.get_visible_child_name() == name
+        if self.window.get_visible() and same:
+            return self.close()
+        if self.just_closed_by_click() and same:
+            return None
+        self.stack.set_visible_child_name(name)
         if not self.window.get_visible():
-            self.toggle()
+            self.open()
+        return None
 
     def widgets(self, root):
         child = root.get_first_child()

@@ -11,7 +11,9 @@
     "exec": "update-manager waybar",
     "return-type": "json",
     "restart-interval": 10,
-    "on-click": "update-manager panel",
-    "on-click-right": "update-manager panel upstream"
+    // update-manager-panel toggles a running panel straight over D-Bus (about 20 ms; `update-manager
+    // panel` starts Python first, 130 ms or more) and falls back to it otherwise.
+    "on-click": "update-manager-panel",
+    "on-click-right": "update-manager-panel upstream"
   }
 }

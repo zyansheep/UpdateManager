@@ -33,7 +33,11 @@ root: update-manager-switch@<system>.service / -boot@  (polkit: the listed users
   module (`update-manager waybar`) and the panel only read it. The Waybar module
   imports neither GTK nor anything slow. The panel stays loaded and hidden
   (`update-manager-panel.service`, `Type=dbus`) and is toggled over D-Bus
-  (`org.gtk.Actions`), so it opens in about 0.1 s. A copy of the state in
+  (`org.gtk.Actions`). The bar's click runs `update-manager-panel`, a shell script that
+  calls `gdbus` directly, so the panel opens in about 30 ms (`update-manager panel`
+  starts Python and GI first: 130 ms or more). A click on the widget while the panel
+  is open closes it: that click takes the focus first, which closes the panel, and
+  a toggle within 0.6 s of such a close keeps it closed. A copy of the state in
   `~/.cache/update-manager` survives reboots, so the widget has something to
   show at login before the agent's first round.
 - **No inbound connections to the laptop.** isomorph has no sshd. Its agent

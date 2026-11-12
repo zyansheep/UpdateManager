@@ -20,6 +20,7 @@
   coreutils,
   util-linux,
   bash,
+  glib,
 }:
 python3Packages.buildPythonApplication {
   pname = "update-manager";
@@ -48,7 +49,22 @@ python3Packages.buildPythonApplication {
     )
   '';
 
+  # update-manager-panel [PAGE]: what the bar's click runs. A running panel is toggled straight over
+  # D-Bus (about 20 ms, where starting Python and GI for `update-manager panel` takes 130 ms or more);
+  # anything else (the panel not running yet, a bad page) goes to `update-manager panel`.
   postInstall = ''
+    cat > $out/bin/update-manager-panel <<SCRIPT
+    #!${lib.getExe bash}
+    case "\$#:\''${1-}" in
+      0:) action=toggle params='[]' ;;
+      1:machines | 1:upstream) action=show params="[<'\$1'>]" ;;
+      *) exec $out/bin/update-manager panel "\$@" ;;
+    esac
+    ${lib.getExe' glib "gdbus"} call --session --dest org.zyansheep.UpdateManager --object-path /org/zyansheep/UpdateManager \
+      --method org.gtk.Actions.Activate "\$action" "\$params" '{}' >/dev/null 2>&1 ||
+      exec $out/bin/update-manager panel "\$@"
+    SCRIPT
+    chmod +x $out/bin/update-manager-panel
     install -Dm755 helper/update-manager-switch $out/libexec/update-manager-switch
     substituteInPlace $out/libexec/update-manager-switch \
       --replace-fail '#!/usr/bin/env bash' '#!${lib.getExe bash}'
