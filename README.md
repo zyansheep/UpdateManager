@@ -108,6 +108,43 @@ version compared with nixpkgs-unstable's.
 
 Buttons that change a system ask once more ("Switch now?") for 4 seconds.
 
+## Agents asking to switch
+
+A coding agent shouldn't switch the system on its own, and one started with
+NoNewPrivileges (as T3 Code starts them) can't `sudo` anyway. It asks instead:
+
+```sh
+update-manager ask-rebuild "REASON" [REBUILD ARGS...]   # e.g. --override-input foo path:/x
+```
+
+That starts an `ask-rebuild` job (a transient user unit like every job, so the
+agent's restrictions don't reach it). The job stages the checkout (`git add .`,
+as `nrb` does), builds the system without root (`ask.preview`, nixos-conf's
+`rebuild --build-only`), then opens a full-screen window over everything: a
+layer-shell overlay on every edge that takes the keyboard. The window shows the
+agent's reason and where it asked from, the closure diff against the running
+system, the commits since the running system's
+`configurationRevision`, the uncommitted files and the rebuild args. It has a
+message box for your answer, **Deny** (Esc) and **Approve and switch** (Ctrl+Enter).
+The buttons wake up after 1.5 s, so keys typed into another window as it opens
+can't answer; they land in the message box. No answer in 15 minutes
+(`ask.timeout`) counts as no.
+
+On Approve the job runs `ask.switch` (`sudo -n rebuild`) with the agent's args.
+If the checkout changed while the window was open, it builds and asks again, so
+what gets switched is what was shown. If the build is the running system already,
+nothing is asked. The panel shows the job like any other ("waiting for your
+answer").
+
+The command follows the job's log, prints your message last ("The user's
+message: …") and exits 0 switched (or nothing to switch), 77 denied, 75 no
+answer, 69 no window could be shown, 1 the build or the switch failed. If it is
+interrupted the job goes on: `update-manager job list`, `job log ID`. One switch,
+rebuild or request runs at a time; another request waits for it.
+
+This is a request, not a lock: a process running as you can still start the
+`rebuild` action or the switch units without asking (see Security).
+
 ## Security
 
 - Starting the switch units is root-equivalent for the users you list:
@@ -115,6 +152,9 @@ Buttons that change a system ask once more ("Switch now?") for 4 seconds.
   user, which wheel is here) can then make it the running system. zyansheep
   already has that through the passwordless `sudo rebuild` and trusted-user.
   The rule adds no new privilege, only a narrower and logged path.
+- `ask-rebuild` asks you, but nothing makes an agent use it: the `rebuild`
+  action, `sudo rebuild` and the switch units need no answer. Make it the only
+  way only by taking those away from the user the agents run as.
 - Remote requests ride on ssh (already full shell access) and are limited to
   the menu. The outbox lets functor's user queue menu actions for isomorph, and
   nothing else.
@@ -127,6 +167,7 @@ Buttons that change a system ask once more ("Switch now?") for 4 seconds.
 ```
 update-manager waybar | panel [machines|upstream] | agent | status [--json] | refresh
 update-manager do ACTION [JSON] | request HOST ACTION [JSON] | actions | job list|log ID
+update-manager ask-rebuild REASON [REBUILD ARGS...] | approve-window REQUEST.json
 update-manager check forks|patches|profiles|inputs|update | brief FORK | config [KEY]
 ```
 

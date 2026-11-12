@@ -8,7 +8,8 @@ records its state, output and progress in ~/.local/state/update-manager/jobs.
 
 Root work is the root units' (nix/module.nix): switching starts
 update-manager-switch@<store path>.service (or -boot@) through polkit;
-"rebuild" uses the existing passwordless `sudo rebuild`.
+"rebuild" uses the existing passwordless `sudo rebuild`; "ask-rebuild" (ask.py) builds first and
+asks the user in a full-screen window.
 """
 import json
 import os
@@ -91,6 +92,13 @@ def busy(kind=None):
     return [j for j in recent(20) if j['state'] in ('queued', 'running') and (kind is None or j['kind'] == kind)]
 
 
+SWITCHING = ('switch', 'boot', 'rebuild', 'ask-rebuild')  # one at a time
+
+
+def busy_switching():
+    return [j for j in busy() if j['kind'] in SWITCHING]
+
+
 # --- the menu ----------------------------------------------------------------------
 
 def validate(action, args):
@@ -128,6 +136,16 @@ def validate(action, args):
                 'fork-agent': 'Hand to an agent:', 'patch-agent': 'Hand to an agent: patches of',
                 'patch-check': 'Check patched packages'}[action]
         return action, f'{verb} {name or "all"}'.strip(), {k: v for k, v in (('name', name), ('how', how)) if v}
+    if action == 'ask-rebuild':
+        reason = str(args.get('reason') or '').strip()
+        extra = args.get('args') or []
+        if not reason or len(reason) > 2000:
+            raise ActionError('ask-rebuild needs a reason (at most 2000 characters)')
+        if not isinstance(extra, list) or len(extra) > 64 or not all(
+                isinstance(a, str) and '\0' not in a and len(a) <= 4096 for a in extra):
+            raise ActionError("ask-rebuild's rebuild args must be a list of strings")
+        return action, f"Ask to rebuild: {reason.splitlines()[0][:80]}", \
+            {'reason': reason, 'args': extra, 'from': str(args.get('from') or '')[:300] or None}
     if action == 'refresh':
         return action, 'Refresh', {}
     raise ActionError(action)
@@ -211,10 +229,16 @@ def stream(job, argv, log, done='done', cwd=None):
             save(job)
             last = time.time()
     proc.wait()
+    proc.stderr.close()
     job['progress'] = progress.snapshot()
     if proc.returncode != 0:
         raise ActionError((progress.errors or [f'exit {proc.returncode}'])[-1])
     return done
+
+
+def do_ask_rebuild(job, args, log):
+    from . import ask  # it imports this module
+    return ask.do_ask_rebuild(job, args, log)
 
 
 def do_ci(job, args, log):
@@ -327,7 +351,7 @@ def do_refresh(job, args, log):
 
 
 ACTIONS = {
-    'switch': do_switch, 'boot': do_switch, 'rebuild': do_rebuild,
+    'switch': do_switch, 'boot': do_switch, 'rebuild': do_rebuild, 'ask-rebuild': do_ask_rebuild,
     'ci-run': do_ci, 'ci-update': do_ci, 'ci-stop': do_ci, 'ci-apply-lock': do_apply_lock,
     'profile-upgrade': do_profile,
     'fork-check': do_fork, 'fork-apply': do_fork, 'fork-push': do_fork, 'fork-agent': do_fork,
@@ -341,7 +365,7 @@ ACTIONS = {
 def start(action, args=None, by=None, wait=False):
     """Validate and start a job here. Returns the job record."""
     kind, title, args = validate(action, args)
-    if kind in ('switch', 'boot', 'rebuild') and busy('switch') + busy('boot') + busy('rebuild'):
+    if kind in SWITCHING and busy_switching():
         raise ActionError('a switch or rebuild is already running')
     job = {'id': new_id(kind), 'kind': kind, 'title': title, 'args': args, 'state': 'queued',
            'created': time.time(), 'host': config.hostname(), 'by': by}
@@ -402,6 +426,8 @@ def run_job(ident):
 
 def notify(job):
     if job['kind'] == 'refresh' or not os.environ.get('WAYLAND_DISPLAY') or not shutil.which('notify-send'):
+        return
+    if job.get('outcome') in ('denied', 'timeout', 'current'):  # the user just answered, or nothing happened
         return
     subprocess.run(['notify-send', '--app-name=Updates', f"{job['title']}: {job['state']}",
                     job.get('message') or ''], capture_output=True)

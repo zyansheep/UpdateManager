@@ -111,6 +111,12 @@ DEFAULTS = {
                                               {'id': 'fastMode', 'value': False}]}},
     # isomorph's screen is 1200x675 logical pixels (1920x1080 at scale 1.6): the panel fits under the bar.
     'panel': {'margin': 0, 'margin_right': 150, 'width': 600, 'height': 500},
+    # `ask-rebuild` (agents ask the user to switch): the build without root that shows what changes
+    # (it must leave ./result), the switch once approved (both get the agent's rebuild args), the
+    # running system to compare with, and how long the window waits for an answer (s).
+    'ask': {'preview': ['/run/current-system/sw/bin/rebuild', '--build-only'],
+            'switch': ['/run/wrappers/bin/sudo', '-n', '/run/current-system/sw/bin/rebuild'],
+            'current': '/run/current-system', 'timeout': 900},
     'waybar': {'signal': 13},
 }
 
