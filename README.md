@@ -123,28 +123,63 @@ update-manager ask-rebuild "REASON" [REBUILD ARGS...]   # e.g. --override-input 
 
 That starts an `ask-rebuild` job (a transient user unit like every job, so the
 agent's restrictions don't reach it). The job stages the checkout (`git add .`,
-as `nrb` does), builds the system without root (`ask.preview`, nixos-conf's
-`rebuild --build-only`), then opens a full-screen window over everything: a
-layer-shell overlay on every edge that takes the keyboard. The window shows the
-agent's reason and where it asked from, the closure diff against the running
-system, the commits since the running system's
+as `nrb` does) and builds the system without root (`ask.preview`, nixos-conf's
+`rebuild --build-only`). Then it asks you in two places at once, and the first
+answer wins.
+
+**The window**, when there is a graphical session (a Wayland socket, or an X
+display): full screen over everything, a layer-shell overlay on every edge that
+takes the keyboard. It shows the agent's reason and where it asked from, the
+closure diff against the running system, the commits since the running system's
 `configurationRevision`, the uncommitted files and the rebuild args. It has a
 message box for your answer, **Deny** (Esc) and **Approve and switch** (Ctrl+Enter).
 The buttons wake up after 1.5 s, so keys typed into another window as it opens
-can't answer; they land in the message box. No answer in 15 minutes
-(`ask.timeout`) counts as no.
+can't answer; they land in the message box.
+
+**Your phone**, through dither-chat's approvals (`dither-ask`, dither-chat's
+`docs/approvals.md`), when that is set up: a `rebuild` request with the same text
+(title "Switch HOST to a new build? REASON", body the reason, closure diff,
+commits, uncommitted files and rebuild args, cut to 32 KiB) and the payload
+`dither-rebuild-v1`: the host, the running commit, `dither-ask diff-hash` of the
+checkout against it, and the built system's store path. You answer on the phone
+(fingerprint) or the hub's page. The running commit is the running system's
+`configurationRevision`; when that isn't a commit in the checkout (built from a
+dirty tree, or unknown), it is the checkout's HEAD, and the body says so. Only
+an approve that `dither-ask status --keys` verifies against the keys file, and
+whose signed statement names this request's id, payload, text and your message,
+switches. One that doesn't verify counts as no answer, and the job log says so
+loudly.
+
+An answer in the window cancels the request on your devices; an answer on a
+device closes the window. With no graphical session (functor's headless desktop)
+or a window that can't open, it asks on your devices alone; with the hub
+unreachable, in the window alone. No answer in 15 minutes (`ask.timeout`, also
+the request's expiry) counts as no.
+
+| Setting (`ask.*`) | Default | |
+| --- | --- | --- |
+| `dither` | `"auto"` | `"on"`, `"off"`, or `"auto"`: on when `dither_command` is found and the URL and token file are set |
+| `dither_command` | `["dither-ask"]` | from the job's PATH (the caller's); an absolute path pins it |
+| `dither_url` | `$DITHER_ASK_URL` | the hub |
+| `dither_token_file` | `$DITHER_ASK_TOKEN_FILE` | this host's asker token |
+| `dither_keys` | `$DITHER_ASK_KEYS`, else `/etc/dither-approvals/keys` | the devices whose signatures count; no keys file, no asking on devices |
+
+The job is a user unit, so it sees the systemd user manager's environment: set
+the three variables there (`systemd.user.extraConfig` / `DefaultEnvironment`, or
+`systemctl --user set-environment`).
 
 On Approve the job runs `ask.switch` (`sudo -n rebuild`) with the agent's args.
-If the checkout changed while the window was open, it builds and asks again, so
-what gets switched is what was shown. If the build is the running system already,
-nothing is asked. The panel shows the job like any other ("waiting for your
-answer").
+If the checkout changed while you were asked, it builds and asks again (a new
+request, with the new diff's hash), so what gets switched is what was shown. If
+the build is the running system already, nothing is asked. The panel shows the
+job like any other ("waiting for your answer").
 
 The command follows the job's log, prints your message last ("The user's
-message: …") and exits 0 switched (or nothing to switch), 77 denied, 75 no
-answer, 69 no window could be shown, 1 the build or the switch failed. If it is
-interrupted the job goes on: `update-manager job list`, `job log ID`. One switch,
-rebuild or request runs at a time; another request waits for it.
+message: …", from either place) and exits 0 switched (or nothing to switch), 77
+denied, 75 no (verified) answer, 69 nowhere to ask (no window and no dither-chat),
+1 the build or the switch failed. If it is interrupted the job goes on:
+`update-manager job list`, `job log ID`. One switch, rebuild or request runs at
+a time; another request waits for it.
 
 This is a request, not a lock: a process running as you can still start the
 `rebuild` action or the switch units without asking (see Security).
@@ -159,6 +194,11 @@ This is a request, not a lock: a process running as you can still start the
 - `ask-rebuild` asks you, but nothing makes an agent use it: the `rebuild`
   action, `sudo rebuild` and the switch units need no answer. Make it the only
   way only by taking those away from the user the agents run as.
+- A phone approval is checked against the keys file, but by whatever
+  `dither-ask` the job runs, and the job runs as you: a process running as you
+  can change `~/.config/update-manager/config.toml`, or the PATH an agent's
+  request carries into the job. Give `ask.dither_command` an absolute store or
+  `/run/current-system` path, and keep the keys file in `/etc`.
 - Remote requests ride on ssh (already full shell access) and are limited to
   the menu. The outbox lets functor's user queue menu actions for isomorph, and
   nothing else.

@@ -4,7 +4,8 @@ Full screen over everything (a layer-shell overlay on every edge that takes the 
 fullscreen window where layer-shell isn't there), so the request interrupts. It shows the agent's
 reason, what the switch changes (the closure diff), the commits since the running system, the
 uncommitted files and the rebuild args, with a message box for the user's answer, Deny and Approve.
-Prints {"decision": "approve"|"deny"|"timeout", "message": "..."} and exits.
+Prints {"decision": "approve"|"deny"|"timeout", "message": "..."} and exits; exits 1 without an answer
+when there is no display. The job closes it (SIGTERM) when the user answered on another device first.
 
 The buttons wake up after ARM_S, so keys typed into another window at the moment it opens can't
 answer; those land in the message box instead. Escape denies; Ctrl+Enter approves. Closing it
@@ -17,7 +18,8 @@ import time
 
 from . import text
 from .panel import CSS as PANEL_CSS, PALETTE, LayerShell, box, label  # first: it picks the GTK versions
-from .util import read_json, size_text
+from .text import diff_summary
+from .util import read_json
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402, I001
 
 ARM_S = 1.5
@@ -34,21 +36,6 @@ window.um-ask { background: rgba(10, 10, 12, 0.84); }
 """
 
 
-def diff_summary(diff):
-    if not diff:
-        return 'No package changes (only configuration).'
-    parts = []
-    if diff.get('kernel'):
-        parts.append(f"Linux {diff['kernel'].get('from') or '?'} → {diff['kernel']['to']}")
-    parts.append(f"{diff['upgraded']} upgraded")
-    if diff['added']:
-        parts.append(f"{diff['added']} new")
-    if diff['removed']:
-        parts.append(f"{diff['removed']} removed")
-    parts.append(('+' if diff['size_delta'] >= 0 else '') + size_text(diff['size_delta']))
-    return ' · '.join(parts)
-
-
 class Approve(Gtk.Application):
     def __init__(self, request):
         super().__init__(application_id=None, flags=Gio.ApplicationFlags.NON_UNIQUE)
@@ -59,6 +46,11 @@ class Approve(Gtk.Application):
         self.connect('activate', self.build)
 
     def build(self, *_):
+        display = Gdk.Display.get_default()
+        if display is None:  # no graphical session (functor's headless desktop): ask-rebuild asks elsewhere
+            print('update-manager: no display to show the window on', file=sys.stderr, flush=True)
+            self.quit()
+            return
         css = Gtk.CssProvider()
         theme = os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')),
                              'waybar/menu-theme.css')
@@ -68,7 +60,7 @@ class Approve(Gtk.Application):
         except OSError:
             overrides = b''
         css.load_from_data(PALETTE + overrides + PANEL_CSS + CSS)
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css,
+        Gtk.StyleContext.add_provider_for_display(display, css,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         settings = Gtk.Settings.get_default()
         if settings is not None:

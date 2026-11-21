@@ -19,7 +19,7 @@ Actions (here, or on HOST: over ssh, or queued until HOST next checks in)
   request HOST ACTION [JSON] start ACTION on HOST
   actions                    the ACTION menu
   job list | log ID          recent jobs, a job's output
-  ask-rebuild REASON [ARGS]  for agents: ask the user (full-screen window) to switch to the checkout;
+  ask-rebuild REASON [ARGS]  for agents: ask the user (full-screen window, phone) to switch to the checkout;
                              waits, prints the user's message, exits 0 / 77 denied / 75 no answer
 
 Checks, printed (the agent runs them on its own schedule)

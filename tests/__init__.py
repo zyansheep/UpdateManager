@@ -11,3 +11,6 @@ os.environ['UPDATE_MANAGER_HOST'] = 'laptop'
 os.environ['UPDATE_MANAGER_NO_SYSTEMD_RUN'] = '1'
 os.environ['XDG_CONFIG_HOME'] = os.path.join(_ROOT, 'config')
 os.environ.pop('WAYLAND_DISPLAY', None)
+os.environ.pop('DISPLAY', None)
+for name in ('DITHER_ASK_URL', 'DITHER_ASK_TOKEN_FILE', 'DITHER_ASK_KEYS'):  # never the real hub
+    os.environ.pop(name, None)

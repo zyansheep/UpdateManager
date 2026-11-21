@@ -75,6 +75,24 @@ ssh -o BatchMode=yes functor '~/.nix-profile/bin/update-manager --version'   # w
      functor's ~/nixos-conf main: a real switch of functor.
    - Upgrade on functor's profile packages changes functor's nix profile.
 
+## 4. ask-rebuild through dither-chat (the phone)
+
+Once nixos-conf sets `DITHER_ASK_URL`, `DITHER_ASK_TOKEN_FILE` and
+`DITHER_ASK_KEYS` in the user manager's environment and installs `dither-ask`:
+
+```sh
+systemctl --user show-environment | grep DITHER_ASK      # what the job will see
+update-manager config ask                                # dither "auto", or "on"
+nrb-request "try the phone"                              # = update-manager ask-rebuild; a real request
+update-manager job log "$(update-manager job list | awk '/ask-rebuild/{print $1; exit}')"
+```
+
+The log says where it asked ("full-screen window and your devices", or one of
+them, and why not the other). On functor (no graphical session) the phone alone
+answers. Deny first: exit 77 and your message printed. An approve from a device
+not in the keys file exits 75 and the log has a `!!!` line. The unit tests drive
+a fake `dither-ask` and never reach the hub.
+
 ## What is set up on functor (user scope, by the functor thread)
 
 - `nix profile install ~/Projects/UpdateManager` (profile element

@@ -9,7 +9,7 @@ records its state, output and progress in ~/.local/state/update-manager/jobs.
 Root work is the root units' (nix/module.nix): switching starts
 update-manager-switch@<store path>.service (or -boot@) through polkit;
 "rebuild" uses the existing passwordless `sudo rebuild`; "ask-rebuild" (ask.py) builds first and
-asks the user in a full-screen window.
+asks the user in a full-screen window and on their phone (dither-chat's approvals).
 """
 import json
 import os

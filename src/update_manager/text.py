@@ -63,6 +63,21 @@ def change_text(change):
     return ('+' if change['delta'] > 0 else '') + size_text(change['delta'])
 
 
+def diff_summary(diff):
+    if not diff:
+        return 'No package changes (only configuration).'
+    parts = []
+    if diff.get('kernel'):
+        parts.append(f"Linux {diff['kernel'].get('from') or '?'} → {diff['kernel']['to']}")
+    parts.append(f"{diff['upgraded']} upgraded")
+    if diff['added']:
+        parts.append(f"{diff['added']} new")
+    if diff['removed']:
+        parts.append(f"{diff['removed']} removed")
+    parts.append(('+' if diff['size_delta'] >= 0 else '') + size_text(diff['size_delta']))
+    return ' · '.join(parts)
+
+
 def estimate_text(update):
     dl = update.get('download') or {}
     est = update.get('estimate') or {}

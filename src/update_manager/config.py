@@ -113,10 +113,18 @@ DEFAULTS = {
     'panel': {'margin': 0, 'margin_right': 150, 'width': 600, 'height': 500},
     # `ask-rebuild` (agents ask the user to switch): the build without root that shows what changes
     # (it must leave ./result), the switch once approved (both get the agent's rebuild args), the
-    # running system to compare with, and how long the window waits for an answer (s).
+    # running system to compare with, and how long the user has to answer (s; also the dither
+    # request's expiry).
+    # `dither`: also ask through dither-chat's approvals (the phone): "on", "off", or "auto" (on when
+    # dither_command is found and the hub's URL and token file are set). The URL, token file and keys
+    # file default to $DITHER_ASK_URL, $DITHER_ASK_TOKEN_FILE and $DITHER_ASK_KEYS (else
+    # /etc/dither-approvals/keys); the job is a user unit, so it sees the user manager's environment.
+    # Only an approve signed by a device in the keys file counts.
     'ask': {'preview': ['/run/current-system/sw/bin/rebuild', '--build-only'],
             'switch': ['/run/wrappers/bin/sudo', '-n', '/run/current-system/sw/bin/rebuild'],
-            'current': '/run/current-system', 'timeout': 900},
+            'current': '/run/current-system', 'timeout': 900,
+            'dither': 'auto', 'dither_command': ['dither-ask'], 'dither_url': None, 'dither_token_file': None,
+            'dither_keys': None},
     'waybar': {'signal': 13},
 }
 
